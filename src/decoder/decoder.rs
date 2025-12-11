@@ -17,6 +17,15 @@ pub struct Module {
     funcs: Vec<Func>   
 }
 
+fn decode_func(func_beam: &OtpErlangTerm) -> Func {
+    Func {
+        name: String::from(""),
+        arity: 0,
+        label: 0,
+        instrs: Vec::new()
+    }
+}
+
 pub fn decode(data: Vec<u8>) -> Module {
     let terms = erlang::binary_to_term(&data).expect("Invalid data format");
 
@@ -29,8 +38,17 @@ pub fn decode(data: Vec<u8>) -> Module {
     };
     let module_name = String::from(std::str::from_utf8(module_name_atom).expect("Module name is not in UTF8"));
 
+    // Decoding functions
+    let OtpErlangTerm::OtpErlangTuple(funcs_beam) = &module[5] else {
+        panic!("Module tuple must contain vector of functions as 6th element")
+    };
+    let mut funcs: Vec<Func> = Vec::with_capacity(funcs_beam.len());
+    for func_beam in funcs_beam {
+        funcs.push(decode_func(func_beam));
+    }
+    
     Module {
         name: module_name,
-        funcs: Vec::new()
+        funcs: funcs
     }
 }
