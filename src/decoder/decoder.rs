@@ -33,8 +33,9 @@ pub fn decode(data: Vec<u8>) -> Module {
     let OtpErlangTerm::OtpErlangTuple(module) = terms else {
         panic!("Data to decode must be a module tuple!")
     };
-    let OtpErlangTerm::OtpErlangAtomUTF8(module_name_atom) = &module[0] else {
-        panic!("Module tuple must contain module's name as first element")
+    
+    let OtpErlangTerm::OtpErlangAtomUTF8(module_name_atom) = &module[1] else {
+        panic!("Module tuple must contain module's name as 2nd element")
     };
     let module_name = String::from(std::str::from_utf8(module_name_atom).expect("Module name is not in UTF8"));
 
