@@ -1,55 +1,86 @@
 use erlang::OtpErlangTerm;
 
 pub struct Instr {
-   name: String,
-   args: Vec<OtpErlangTerm>
+    name: String,
+    args: Vec<OtpErlangTerm>,
 }
 
 pub struct Func {
     name: String,
-    arity: i8,
-    label: i64,
-    instrs: Vec<Instr>
+    arity: i32,
+    label: i32,
+    instrs: Vec<Instr>,
 }
 
 pub struct Module {
     name: String,
-    funcs: Vec<Func>   
+    funcs: Vec<Func>,
 }
 
-fn decode_func(func_beam: &OtpErlangTerm) -> Func {
-    Func {
+fn atomutf8_to_string(data: &Vec<u8>) -> Option<String> {
+    Some(String::from(std::str::from_utf8(data).ok()?))
+}
+
+fn decode_instr(instr_beam: &OtpErlangTerm) -> Option<Instr> {
+    Some(Instr {
         name: String::from(""),
-        arity: 0,
-        label: 0,
-        instrs: Vec::new()
-    }
+        args: Vec::new(),
+    })
 }
 
-pub fn decode(data: Vec<u8>) -> Module {
+fn decode_func(func_beam: &OtpErlangTerm) -> Option<Func> {
+    let OtpErlangTerm::OtpErlangTuple(func_tuple) = func_beam else {
+        return None;
+    };
+    let OtpErlangTerm::OtpErlangAtomUTF8(name_atom) = &func_tuple[1] else {
+        return None;
+    };
+    let OtpErlangTerm::OtpErlangInteger(arity) = func_tuple[2] else {
+        return None;
+    };
+    let OtpErlangTerm::OtpErlangInteger(label) = func_tuple[3] else {
+        return None;
+    };
+    let name = atomutf8_to_string(name_atom)?;
+
+    let OtpErlangTerm::OtpErlangList(instrs_beam) = &func_tuple[4] else {
+        return None;
+    };
+    let mut instrs: Vec<Instr> = Vec::with_capacity(instrs_beam.len());
+    for instr_beam in instrs_beam {
+        instrs.push(decode_instr(instr_beam)?);
+    }
+
+    Some(Func {
+        name: name,
+        arity: arity,
+        label: label,
+        instrs: instrs,
+    })
+}
+
+pub fn decode(data: Vec<u8>) -> Option<Module> {
     let terms = erlang::binary_to_term(&data).expect("Invalid data format");
 
-    // Extracting module name
     let OtpErlangTerm::OtpErlangTuple(module) = terms else {
-        panic!("Data to decode must be a module tuple!")
+        return None;
     };
-    
-    let OtpErlangTerm::OtpErlangAtomUTF8(module_name_atom) = &module[1] else {
-        panic!("Module tuple must contain module's name as 2nd element")
-    };
-    let module_name = String::from(std::str::from_utf8(module_name_atom).expect("Module name is not in UTF8"));
 
-    // Decoding functions
-    let OtpErlangTerm::OtpErlangTuple(funcs_beam) = &module[5] else {
-        panic!("Module tuple must contain vector of functions as 6th element")
+    let OtpErlangTerm::OtpErlangAtomUTF8(module_name_atom) = &module[1] else {
+        return None;
+    };
+    let module_name = atomutf8_to_string(module_name_atom)?;
+
+    let OtpErlangTerm::OtpErlangList(funcs_beam) = &module[5] else {
+        return None;
     };
     let mut funcs: Vec<Func> = Vec::with_capacity(funcs_beam.len());
     for func_beam in funcs_beam {
-        funcs.push(decode_func(func_beam));
+        funcs.push(decode_func(func_beam)?);
     }
-    
-    Module {
+
+    Some(Module {
         name: module_name,
-        funcs: funcs
-    }
+        funcs: funcs,
+    })
 }
