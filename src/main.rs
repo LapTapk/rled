@@ -1,3 +1,5 @@
+#![allow(unused)]
+
 mod decoder;
 
 fn main() {
