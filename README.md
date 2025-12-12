@@ -2,9 +2,9 @@
 This project is aimed to enhance my programming skills in general.
 # Developing version 0.1
 On this stage rled must satisfy following requirements:
-[ ] Mostly imperative pseudo code style
-[ ] Display readable control flow (like `if` with indentation)
-[ ] Placing X registers to a function args
+- Mostly imperative pseudo code style
+- Display readable control flow (like `if` with indentation)
+- Placing X registers to a function args
 # Example
 BEAM code
 ```
