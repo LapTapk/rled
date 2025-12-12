@@ -5,8 +5,7 @@ version = 4
 [[package]]
 name = "erlang_rs"
 version = "2.0.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2d6b905c38b06ff7f4bdee8278bca5b454c1be6244111ef13a0c2c2b9d00c5ac"
+source = "git+https://github.com/LapTapk/erlang_rs#d4f19daba4367fe12bacd29cd697f2742833566a"
 
 [[package]]
 name = "rled"
