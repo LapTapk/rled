@@ -5,3 +5,4 @@ edition = "2024"
 
 [dependencies]
 erlang_rs = { git = "https://github.com/LapTapk/erlang_rs" }
+once_cell = "1.21.3"
