@@ -1,4 +1,5 @@
-use crate::decoder::instructions::*;
+use crate::translation::{Token, Instr};
+use crate::decoder::instructions::construct_instr;
 use crate::decoder::util::atomutf8_to_string;
 use erlang::OtpErlangTerm;
 
@@ -12,12 +13,6 @@ pub struct Func {
 pub struct Module {
     name: String,
     funcs: Vec<Func>,
-}
-
-pub trait Token {
-    fn decode(term: &OtpErlangTerm) -> Result<Self, &'static str>
-    where
-        Self: Sized;
 }
 
 impl Token for Func {

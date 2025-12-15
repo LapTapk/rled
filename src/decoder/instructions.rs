@@ -1,14 +1,10 @@
-use crate::decoder::decoder::*;
+use crate::translation::{Instr, Token};
 use crate::decoder::util::atomutf8_to_string;
 use erlang::OtpErlangTerm;
 use once_cell::sync::Lazy;
 use std::collections::HashMap;
 
 static INSTR_REGISTRY_LIST: [(&'static str, InstrCtor); 0] = [];
-
-pub trait Instr: Token {
-    fn is_ctrl(&self) -> bool;
-}
 
 type InstrCtor = fn(&OtpErlangTerm) -> Box<dyn Instr>;
 
