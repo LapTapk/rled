@@ -1,7 +1,8 @@
 #![allow(unused)]
 
-mod decoder;
+mod instructions;
 mod translation;
+mod util;
 
 fn main() {
     println!("Hello, world!");
