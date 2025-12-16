@@ -7,7 +7,7 @@ pub trait Token {
     fn parse<'a>(term: &OtpErlangTerm, slist: SymbolList<'a>) -> Result<Parsed<'a>, &'static str>
     where
         Self: Sized;
-    // fn translate(&self);
+    fn translate(&self) -> Vec<String>;
 }
 
 pub enum Reg {
@@ -87,6 +87,20 @@ impl Token for Func {
             slist: SymbolList::new(),
         })
     }
+
+    fn translate(&self) -> Vec<String> {
+        let args = (0..self.arity)
+            .map(|x| format!("Arg{}", x))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let mut tr = vec![format!("{}({}) ->", self.name, args)];
+        for instr in &self.instrs {
+            let instr_tr = instr.translate();
+            let instr_tr_in_func = instr_tr.iter().map(|x| {format!("    {}", x)}).collect::<Vec<_>>();
+            tr.extend(instr_tr_in_func);
+        }
+        tr
+    }
 }
 
 impl Token for Module {
@@ -121,5 +135,14 @@ impl Token for Module {
             token: Box::new(module),
             slist: slist,
         })
+    }
+
+    fn translate(&self) -> Vec<String> {
+        let mut tr = vec![format!("-module({}).", self.name)];
+        for func in &self.funcs {
+            let func_tr = func.translate();
+            tr.extend(func_tr);
+        }
+        tr
     }
 }

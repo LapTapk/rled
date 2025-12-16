@@ -49,13 +49,22 @@ pub fn parse_instr<'a>(
     INSTR_REGISTRY[name.as_str()](term, slist)
 }
 
-struct Unresolved {}
+struct Unresolved {
+    term: OtpErlangTerm
+}
 
 impl Token for Unresolved {
     fn parse<'a>(term: &OtpErlangTerm, slist: SymbolList<'a>) -> Result<Parsed<'a>, &'static str> {
         Ok(Parsed {
-            token: Box::new(Unresolved {}),
+            token: Box::new(Unresolved {
+                term: term.clone()
+            }),
             slist: LinkedList::new(),
         })
+    }
+
+    fn translate(&self) -> Vec<String> {
+        let tr = vec![format!("{:?}", self.term)];
+        tr
     }
 }
