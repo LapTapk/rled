@@ -1,6 +1,5 @@
 #![allow(unused)]
 
-mod instructions;
 mod translation;
 mod util;
 
