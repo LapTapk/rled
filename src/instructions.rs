@@ -5,7 +5,7 @@ use once_cell::sync::Lazy;
 use std::collections::HashMap;
 use std::collections::LinkedList;
 
-static TOKEN_REGISTRY_LIST: [(&'static str, InstrCtor); 8] = [
+static TOKEN_REGISTRY_LIST: [(&'static str, InstrCtor); 12] = [
     ("label", parse_generic::<Label>),
     ("line", parse_generic::<Line>),
     ("func_info", parse_generic::<FuncInfo>),
@@ -13,7 +13,11 @@ static TOKEN_REGISTRY_LIST: [(&'static str, InstrCtor); 8] = [
     ("init_yregs", parse_generic::<InitYRegs>),
     ("move", parse_generic::<Move>),
     ("x", parse_generic::<XReg>),
-    ("y", parse_generic::<YReg>)
+    ("y", parse_generic::<YReg>),
+    ("call_ext", parse_generic::<CallExt>),
+    ("extfunc", parse_generic::<ExtFunc>),
+    ("f", parse_generic::<FLabel>),
+    ("gc_bif", parse_generic::<GcBif>)
 ];
 
 type InstrCtor = fn(&OtpErlangTerm) -> Result<Box<dyn Token>, &'static str>;
@@ -172,5 +176,161 @@ impl Token for Move {
         let tr1 = self.lvalue.translate().unwrap_or(String::from(""));
         let tr2 = self.rvalue.translate().unwrap_or(String::from(""));
         Some(format!("{} = {}", tr1, tr2))
+    }
+}
+
+struct CallExt {
+    arity: i32,
+    func: Box<dyn Token>,
+}
+
+impl Token for CallExt {
+    fn parse(term: &OtpErlangTerm) -> Result<Box<dyn Token>, &'static str> {
+        extrtuple!(callext_tuple, term);
+        if callext_tuple.len() != 3 {
+            return Err("CallExt tuple must be 3 items long");
+        }
+
+        let OtpErlangTerm::OtpErlangInteger(arity) = &callext_tuple[1] else {
+            return Err("CallExt tuple must contain arity integer as 2nd element");
+        };
+        let func = parse_generic::<ExtFunc>(&callext_tuple[2])?;
+
+        let call_ext = CallExt {
+            arity: *arity,
+            func: func,
+        };
+
+        Ok(Box::new(call_ext))
+    }
+
+    fn translate(&self) -> Option<String> {
+        self.func.translate()
+    }
+}
+
+struct ExtFunc {
+    module: String,
+    name: String,
+    arity: i32,
+}
+
+impl Token for ExtFunc {
+    fn parse(term: &OtpErlangTerm) -> Result<Box<dyn Token>, &'static str> {
+        extrtuple!(extfunc_tuple, term);
+        if extfunc_tuple.len() != 4 {
+            return Err("ExtFunc tuple must contain 4 elements");
+        }
+        let OtpErlangTerm::OtpErlangAtomUTF8(module_atom) = &extfunc_tuple[1] else {
+            return Err("ExtFunc tuple must contain module name atom as 2nd element");
+        };
+        let module = atomutf8_to_string(module_atom)?;
+
+        let OtpErlangTerm::OtpErlangAtomUTF8(name_atom) = &extfunc_tuple[2] else {
+            return Err("ExtFunc tuple must contain func name atom as 3rd element");
+        };
+        let name = atomutf8_to_string(name_atom)?;
+
+        let OtpErlangTerm::OtpErlangInteger(arity) = &extfunc_tuple[3] else {
+            return Err("ExtFunc tuple must contain arity integer as 4th element");
+        };
+
+        let ext_func = ExtFunc {
+            module: module,
+            name: name,
+            arity: *arity,
+        };
+
+        Ok(Box::new(ext_func))
+    }
+
+    fn translate(&self) -> Option<String> {
+        let args = (0..self.arity)
+            .map(|x| format!("X{}", x))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let tr = format!("X0 = {}:{}({})", self.module, self.name, args);
+        Some(tr)
+    }
+}
+
+struct FLabel {
+    num: i32,
+}
+
+impl Token for FLabel {
+    fn parse(term: &OtpErlangTerm) -> Result<Box<dyn Token>, &'static str> {
+        extrtuple!(flabel_tuple, term);
+        let OtpErlangTerm::OtpErlangInteger(num) = &flabel_tuple[1] else {
+            return Err("FLabel must have integer as it's 2nd element");
+        };
+
+        let flabel = FLabel { num: *num };
+        Ok(Box::new(flabel))
+    }
+
+    fn translate(&self) -> Option<String> {
+        None
+    }
+}
+
+struct GcBif {
+    name: String,
+    fallback: Box<dyn Token>,
+    arity: i32,
+    args: Vec<Box<dyn Token>>,
+    store: Box<dyn Token>,
+}
+
+impl Token for GcBif {
+    fn parse(term: &OtpErlangTerm) -> Result<Box<dyn Token>, &'static str> {
+        extrtuple!(gcbif_tuple, term);
+        if gcbif_tuple.len() != 6 {
+            return Err("GcBif tuple must be 6 items long");
+        }
+
+        let OtpErlangTerm::OtpErlangAtomUTF8(name_atom) = &gcbif_tuple[1] else {
+            return Err("GcBif tuple must contain function name atom as 2nd element");
+        };
+        let name = atomutf8_to_string(name_atom)?;
+
+        let fallback = <FLabel as Token>::parse(&gcbif_tuple[2])?;
+
+        let OtpErlangTerm::OtpErlangInteger(arity) = &gcbif_tuple[3] else {
+            return Err("GcBif tuple must contain arity integer as 5th element");
+        };
+
+        let OtpErlangTerm::OtpErlangList(args_terms) = &gcbif_tuple[4] else {
+            return Err("GcBif tuple must contain args list as 5th element");
+        };
+        let mut args: Vec<Box<dyn Token>> = Vec::with_capacity(args_terms.len());
+        for term in args_terms {
+            let token = parse_token(term)?;
+            args.push(token);
+        }
+
+        let store = parse_token(&gcbif_tuple[5])?;
+
+        let gcbif = GcBif {
+            name: name,
+            fallback: fallback,
+            arity: *arity,
+            args: args,
+            store: store,
+        };
+
+        Ok(Box::new(gcbif))
+    }
+
+    fn translate(&self) -> Option<String> {
+        let args = self
+            .args
+            .iter()
+            .map(|x| x.translate().unwrap_or(String::from("")))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let store_tr = self.store.translate().unwrap_or(String::from(""));
+        let tr = format!("{} = {}({})", store_tr, self.name, args);
+        Some(tr)
     }
 }
