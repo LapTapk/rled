@@ -1,37 +1,13 @@
-use crate::instructions::parse_instr;
+use crate::instructions::parse_token;
 use crate::util::atomutf8_to_string;
 use erlang::OtpErlangTerm;
 use std::collections::LinkedList;
 
 pub trait Token {
-    fn parse<'a>(term: &OtpErlangTerm, slist: SymbolList<'a>) -> Result<Parsed<'a>, &'static str>
+    fn parse(term: &OtpErlangTerm) -> Result<Box<dyn Token>, &'static str>
     where
         Self: Sized;
-    fn translate(&self) -> Vec<String>;
-}
-
-pub enum Reg {
-    X { i: i32 },
-    Y { i: i32 },
-}
-
-pub enum SymbolValue<'a> {
-    FuncRes { token: &'a dyn Token },
-    Constant { term: &'a OtpErlangTerm },
-    Symbol { id: i32 },
-}
-
-pub struct Symbol<'a> {
-    reg: Reg,
-    value: SymbolValue<'a>,
-    parent_node: &'a dyn Token,
-}
-
-pub type SymbolList<'a> = LinkedList<Symbol<'a>>;
-
-pub struct Parsed<'a> {
-    pub token: Box<dyn Token>,
-    pub slist: SymbolList<'a>,
+    fn translate(&self) -> Option<String>;
 }
 
 pub struct Func {
@@ -47,10 +23,7 @@ pub struct Module {
 }
 
 impl Token for Func {
-    fn parse<'a>(
-        term: &OtpErlangTerm,
-        mut slist: SymbolList<'a>,
-    ) -> Result<Parsed<'a>, &'static str> {
+    fn parse<'a>(term: &OtpErlangTerm) -> Result<Box<dyn Token>, &'static str> {
         let OtpErlangTerm::OtpErlangTuple(func_tuple) = term else {
             return Err("Func term must be a tuple");
         };
@@ -71,9 +44,8 @@ impl Token for Func {
 
         let mut instrs: Vec<Box<dyn Token>> = Vec::with_capacity(instrs_list.len());
         for instr_term in instrs_list {
-            let parsed_instr = parse_instr(instr_term, slist)?;
-            instrs.push(parsed_instr.token);
-            slist = parsed_instr.slist;
+            let parsed_instr = parse_token(instr_term)?;
+            instrs.push(parsed_instr);
         }
 
         let token = Func {
@@ -82,32 +54,28 @@ impl Token for Func {
             label: label,
             instrs: instrs,
         };
-        Ok(Parsed {
-            token: Box::new(token),
-            slist: SymbolList::new(),
-        })
+        Ok(Box::new(token))
     }
 
-    fn translate(&self) -> Vec<String> {
+    fn translate(&self) -> Option<String> {
         let args = (0..self.arity)
             .map(|x| format!("Arg{}", x))
             .collect::<Vec<_>>()
             .join(", ");
         let mut tr = vec![format!("{}({}) ->", self.name, args)];
         for instr in &self.instrs {
-            let instr_tr = instr.translate();
-            let instr_tr_in_func = instr_tr.iter().map(|x| {format!("    {}", x)}).collect::<Vec<_>>();
-            tr.extend(instr_tr_in_func);
+            let instr_tr_option = instr.translate();
+            if let Some(instr_tr) = instr_tr_option {
+                let instr_tr_in_func = String::from("    ") + instr_tr.as_str().replace("\n", "\n    ").as_str();
+                tr.push(instr_tr_in_func);
+            }
         }
-        tr
+        Some(tr.join("\n"))
     }
 }
 
 impl Token for Module {
-    fn parse<'a>(
-        term: &OtpErlangTerm,
-        mut slist: SymbolList<'a>,
-    ) -> Result<Parsed<'a>, &'static str> {
+    fn parse<'a>(term: &OtpErlangTerm) -> Result<Box<dyn Token>, &'static str> {
         let OtpErlangTerm::OtpErlangTuple(module) = term else {
             return Err("Module term must be a tuple");
         };
@@ -122,27 +90,25 @@ impl Token for Module {
         };
         let mut funcs: Vec<Box<dyn Token>> = Vec::with_capacity(funcs_beam.len());
         for func_beam in funcs_beam {
-            let parsed_func = Func::parse(func_beam, slist)?;
-            funcs.push(parsed_func.token);
-            slist = parsed_func.slist;
+            let parsed_func = Func::parse(func_beam)?;
+            funcs.push(parsed_func);
         }
 
         let module = Module {
             name: name,
             funcs: funcs,
         };
-        Ok(Parsed {
-            token: Box::new(module),
-            slist: slist,
-        })
+        Ok(Box::new(module))
     }
 
-    fn translate(&self) -> Vec<String> {
+    fn translate(&self) -> Option<String> {
         let mut tr = vec![format!("-module({}).", self.name)];
         for func in &self.funcs {
-            let func_tr = func.translate();
-            tr.extend(func_tr);
+            let func_tr_option = func.translate();
+            if let Some(func_tr) = func_tr_option {
+                tr.push(func_tr)
+            }
         }
-        tr
+        Some(tr.join("\n"))
     }
 }
