@@ -1,9 +1,9 @@
 use crate::util::atomutf8_to_string;
+use downcast_rs::{Downcast, impl_downcast};
 use erlang::OtpErlangTerm;
 use once_cell::sync::Lazy;
 use std::collections::HashMap;
 use std::collections::LinkedList;
-use downcast_rs::{impl_downcast, Downcast};
 
 pub trait TokenMeta {
     const LEXEME: &'static str;
@@ -486,9 +486,9 @@ impl TokenMeta for Literal {
         let OtpErlangTerm::OtpErlangString(s) = &literal_tuple[1] else {
             return Err("Literal tuple must contain a string as the 2nd element");
         };
-        
+
         let literal = Literal {
-            s: String::from(std::str::from_utf8(s).map_err(|_| "Cannot extract string")?)
+            s: String::from(std::str::from_utf8(s).map_err(|_| "Cannot extract string")?),
         };
         Ok(Box::new(literal))
     }
@@ -529,7 +529,10 @@ impl TokenMeta for CallExtLast {
 
 impl Token for CallExtLast {
     fn translate(&self) -> Option<String> {
-        Some(format!("return {}", self.func.translate().unwrap_or("ERROR".into())))
+        Some(format!(
+            "return {}",
+            self.func.translate().unwrap_or("ERROR".into())
+        ))
     }
 }
 
@@ -592,7 +595,7 @@ struct PutList {
     head: Box<dyn Token>,
     tail: Box<dyn Token>,
     store: Box<dyn Token>,
-    tail_is_nil: bool
+    tail_is_nil: bool,
 }
 
 impl TokenMeta for PutList {
@@ -618,7 +621,7 @@ impl TokenMeta for PutList {
             head: head,
             tail: tail,
             store: store,
-            tail_is_nil
+            tail_is_nil,
         };
 
         Ok(Box::new(put_list))
@@ -629,10 +632,9 @@ impl Token for PutList {
     fn translate(&self) -> Option<String> {
         let head_tr = self.head.translate().unwrap_or("".into());
         let store_tr = self.store.translate().unwrap_or("".into());
-        if(self.tail_is_nil) {
+        if (self.tail_is_nil) {
             Some(format!("{} = [{}]", store_tr, head_tr))
-        }
-        else {
+        } else {
             let tail_tr = self.tail.translate().unwrap_or("".into());
             Some(format!("{} = [{} | {}]", store_tr, head_tr, tail_tr))
         }
@@ -655,7 +657,7 @@ impl Token for Nil {
 }
 
 struct Atom {
-    name: String
+    name: String,
 }
 
 impl TokenMeta for Atom {
@@ -663,9 +665,7 @@ impl TokenMeta for Atom {
     fn parse(term: &OtpErlangTerm) -> Result<Box<dyn Token>, &'static str> {
         extrtuple!(atom_tuple, term);
         let name = atomutf8_to_string(&atom_tuple[1])?;
-        let atom = Atom {
-            name: name
-        };
+        let atom = Atom { name: name };
         Ok(Box::new(atom))
     }
 }
