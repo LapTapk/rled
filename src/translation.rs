@@ -43,20 +43,36 @@ macro_rules! emptyinstr {
 macro_rules! parse_next_token {
     ($term:expr => $($token:ty)|*) => {
         {
-            let OtpErlangTerm::OtpErlangTuple(tuple) = $term else {
-                return Err("Token term must be a tuple");
-            };
-            let lexem = atomutf8_to_string(&tuple[0])?;
-            let token_res = match lexem.as_str() {
-                $(
-                    <$token as TokenMeta>::LEXEM => <$token as TokenMeta>::parse,
-                )*
-                _ => <Unresolved as TokenMeta>::parse
-            }($term);
+            match $term {
+                OtpErlangTerm::OtpErlangTuple(tuple) => {
+                    let lexem = atomutf8_to_string(&tuple[0])?;
+                    let token_res = match lexem.as_str() {
+                        $(
+                            <$token as TokenMeta>::LEXEM => <$token as TokenMeta>::parse,
+                        )*
+                        _ => <Unresolved as TokenMeta>::parse
+                    }($term);
 
-            match token_res {
-                Ok(token) => token,
-                _ => <Unresolved as TokenMeta>::parse($term).unwrap()
+                    match token_res {
+                        Ok(token) => token,
+                        _ => <Unresolved as TokenMeta>::parse($term).unwrap()
+                    }
+                },
+                OtpErlangTerm::OtpErlangAtomUTF8(_) => {
+                    let lexem = atomutf8_to_string($term)?;
+                    let token_res = match lexem.as_str() {
+                        $(
+                            <$token as TokenMeta>::LEXEM => <$token as TokenMeta>::parse,
+                        )*
+                        _ => <Unresolved as TokenMeta>::parse
+                    }($term);
+
+                    match token_res {
+                        Ok(token) => token,
+                        _ => <Unresolved as TokenMeta>::parse($term).unwrap()
+                    }
+                }
+                _ => return Err("Cannot find any matching token productions")
             }
         }
     };
@@ -142,7 +158,9 @@ impl TokenMeta for Func {
                 GcBif |
                 Line |
                 CallExtLast |
-                CallExtOnly
+                CallExtOnly |
+                TestHeap |
+                PutList
             );
             instrs.push(parsed_instr);
         }
@@ -219,11 +237,6 @@ impl Token for Label {
     }
 }
 
-emptyinstr!(Line, "line");
-emptyinstr!(FuncInfo, "func_info");
-emptyinstr!(Allocate, "allocate");
-emptyinstr!(InitYRegs, "init_yregs");
-
 struct XReg {
     num: i32,
 }
@@ -283,7 +296,7 @@ impl TokenMeta for Move {
             return Err("Move tuple must have 3 elements");
         }
 
-        let rvalue = parse_next_token!(&move_tuple[1] => XReg | YReg | Literal);
+        let rvalue = parse_next_token!(&move_tuple[1] => XReg | YReg | Literal | Integer | Atom);
         let lvalue = parse_next_token!(&move_tuple[2] => XReg | YReg);
         let move_token = Move {
             rvalue: rvalue,
@@ -550,3 +563,106 @@ impl Token for CallExtOnly {
         self.func.translate()
     }
 }
+
+struct Integer {
+    num: i32,
+}
+
+impl TokenMeta for Integer {
+    const LEXEM: &'static str = "integer";
+    fn parse(term: &OtpErlangTerm) -> Result<Box<dyn Token>, &'static str> {
+        extrtuple!(int_tuple, term);
+        let OtpErlangTerm::OtpErlangInteger(num) = &int_tuple[1] else {
+            return Err("Integer tuple must contain an integer as 2nd element");
+        };
+        let integer = Integer { num: *num };
+        Ok(Box::new(integer))
+    }
+}
+
+impl Token for Integer {
+    fn translate(&self) -> Option<String> {
+        Some(format!("{}", self.num))
+    }
+}
+
+struct PutList {
+    head: Box<dyn Token>,
+    tail: Box<dyn Token>,
+    store: Box<dyn Token>,
+}
+
+impl TokenMeta for PutList {
+    const LEXEM: &'static str = "put_list";
+    fn parse(term: &OtpErlangTerm) -> Result<Box<dyn Token>, &'static str> {
+        extrtuple!(putlist_tuple, term);
+
+        if putlist_tuple.len() != 4 {
+            return Err("Putlist tuple must be 4 items long");
+        }
+
+        let head = parse_next_token!(&putlist_tuple[1] => YReg | XReg);
+        let tail = parse_next_token!(&putlist_tuple[2] => YReg | XReg | Nil);
+        let store = parse_next_token!(&putlist_tuple[3] => YReg | XReg);
+
+        let put_list = PutList {
+            head: head,
+            tail: tail,
+            store: store,
+        };
+
+        Ok(Box::new(put_list))
+    }
+}
+
+impl Token for PutList {
+    fn translate(&self) -> Option<String> {
+        let head_tr = self.head.translate().unwrap_or("".into());
+        let tail_tr = self.tail.translate().unwrap_or("".into());
+        let store_tr = self.store.translate().unwrap_or("".into());
+        Some(format!("{} = [{} | {}]", store_tr, head_tr, tail_tr))
+    }
+}
+
+struct Nil {}
+
+impl TokenMeta for Nil {
+    const LEXEM: &'static str = "nil";
+    fn parse(term: &OtpErlangTerm) -> Result<Box<dyn Token>, &'static str> {
+        Ok(Box::new(Nil {}))
+    }
+}
+
+impl Token for Nil {
+    fn translate(&self) -> Option<String> {
+        Some("nil".into())
+    }
+}
+
+struct Atom {
+    name: String
+}
+
+impl TokenMeta for Atom {
+    const LEXEM: &'static str = "atom";
+    fn parse(term: &OtpErlangTerm) -> Result<Box<dyn Token>, &'static str> {
+        extrtuple!(atom_tuple, term);
+        let name = atomutf8_to_string(&atom_tuple[1])?;
+        let atom = Atom {
+            name: name
+        };
+        Ok(Box::new(atom))
+    }
+}
+
+impl Token for Atom {
+    fn translate(&self) -> Option<String> {
+        Some(self.name.clone())
+    }
+}
+
+emptyinstr!(Line, "line");
+emptyinstr!(FuncInfo, "func_info");
+emptyinstr!(Allocate, "allocate");
+emptyinstr!(InitYRegs, "init_yregs");
+emptyinstr!(TestHeap, "test_heap");
