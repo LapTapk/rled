@@ -4,39 +4,35 @@ use once_cell::sync::Lazy;
 use std::collections::HashMap;
 use std::collections::LinkedList;
 
+pub trait TokenMeta {
+    const LEXEM: &'static str;
+    fn parse(term: &OtpErlangTerm) -> Result<Box<dyn Token>, &'static str>;
+}
+
 pub trait Token {
-    fn parse(term: &OtpErlangTerm) -> Result<Box<dyn Token>, &'static str>
-    where
-        Self: Sized;
     fn translate(&self) -> Option<String>;
 }
 
-macro_rules! prodlist {
-    ($( $type:ident ),*) => {
-        vec![ $( $type::parse, )* ]
-    }
-}
-
-macro_rules! parse_prolog {
-    ($tuple_name:ident, $term:ident, $name:literal) => {
+macro_rules! extrtuple {
+    ($tuple_name:ident, $term:expr) => {
         let OtpErlangTerm::OtpErlangTuple($tuple_name) = $term else {
             return Err("Token term must be a tuple");
         };
-        if atomutf8_to_string(&$tuple_name[0])?.as_str() != $name {
-            return Err("Did not match token type");
-        }
     };
 }
 
 macro_rules! emptyinstr {
     ($type:ident, $name:literal) => {
         struct $type {}
-        impl Token for $type {
+        impl TokenMeta for $type {
+            const LEXEM: &'static str = $name;
             fn parse(term: &OtpErlangTerm) -> Result<Box<dyn Token>, &'static str> {
-                parse_prolog!(tuple, term, $name);
+                extrtuple!(tuple, term);
                 Ok(Box::new($type {}))
             }
+        }
 
+        impl Token for $type {
             fn translate(&self) -> Option<String> {
                 None
             }
@@ -46,15 +42,26 @@ macro_rules! emptyinstr {
 
 type Production = fn(&OtpErlangTerm) -> Result<Box<dyn Token>, &'static str>;
 
-fn select_production(term: &OtpErlangTerm, prods: &Vec<Production>) -> Box<dyn Token> {
-    for (i, prod) in prods.iter().enumerate() {
-        match prod(term) {
-            Ok(t) => return t,
-            _ => {}
-        };
-    }
+macro_rules! parse_next_token {
+    ($term:expr, $($token:ty),*) => {
+        {
+            let OtpErlangTerm::OtpErlangTuple(tuple) = $term else {
+                return Err("Token term must be a tuple");
+            };
+            let lexem = atomutf8_to_string(&tuple[0])?;
+            let token_res = match lexem.as_str() {
+                $(
+                    <$token as TokenMeta>::LEXEM => <$token as TokenMeta>::parse,
+                )*
+                _ => <Unresolved as TokenMeta>::parse
+            }($term);
 
-    Unresolved::parse(term).unwrap()
+            match token_res {
+                Ok(token) => token,
+                _ => <Unresolved as TokenMeta>::parse($term).unwrap()
+            }
+        }
+    };
 }
 
 pub struct Module {
@@ -62,9 +69,10 @@ pub struct Module {
     funcs: Vec<Box<dyn Token>>,
 }
 
-impl Token for Module {
+impl TokenMeta for Module {
+    const LEXEM: &'static str = "beam_file";
     fn parse(term: &OtpErlangTerm) -> Result<Box<dyn Token>, &'static str> {
-        parse_prolog!(module, term, "beam_file");
+        extrtuple!(module, term);
 
         let name = atomutf8_to_string(&module[1])?;
 
@@ -73,7 +81,7 @@ impl Token for Module {
         };
         let mut funcs: Vec<Box<dyn Token>> = Vec::with_capacity(funcs_beam.len());
         for func_beam in funcs_beam {
-            let parsed_func = select_production(func_beam, &prodlist!(Func));
+            let parsed_func = parse_next_token!(func_beam, Func);
             funcs.push(parsed_func);
         }
 
@@ -83,7 +91,9 @@ impl Token for Module {
         };
         Ok(Box::new(module))
     }
+}
 
+impl Token for Module {
     fn translate(&self) -> Option<String> {
         let mut tr = vec![format!("-module({}).\n", self.name)];
         for func in &self.funcs {
@@ -104,9 +114,10 @@ pub struct Func {
     instrs: Vec<Box<dyn Token>>,
 }
 
-impl Token for Func {
+impl TokenMeta for Func {
+    const LEXEM: &'static str = "function";
     fn parse(term: &OtpErlangTerm) -> Result<Box<dyn Token>, &'static str> {
-        parse_prolog!(func_tuple, term, "function");
+        extrtuple!(func_tuple, term);
 
         let name = atomutf8_to_string(&func_tuple[1])?;
         let OtpErlangTerm::OtpErlangInteger(arity) = func_tuple[2] else {
@@ -122,11 +133,18 @@ impl Token for Func {
 
         let mut instrs: Vec<Box<dyn Token>> = Vec::with_capacity(instrs_list.len());
         for instr_term in instrs_list {
-            let parsed_instr = select_production(
+            let parsed_instr = parse_next_token!(
                 instr_term,
-                &prodlist!(
-                    Move, Label, FuncInfo, Allocate, InitYRegs, CallExt, GcBif, Line, CallExtLast, CallExtOnly
-                ),
+                Move,
+                Label,
+                FuncInfo,
+                Allocate,
+                InitYRegs,
+                CallExt,
+                GcBif,
+                Line,
+                CallExtLast,
+                CallExtOnly
             );
             instrs.push(parsed_instr);
         }
@@ -139,7 +157,9 @@ impl Token for Func {
         };
         Ok(Box::new(token))
     }
+}
 
+impl Token for Func {
     fn translate(&self) -> Option<String> {
         let args = (0..self.arity)
             .map(|x| format!("X{}", x))
@@ -164,11 +184,14 @@ struct Unresolved {
     term: OtpErlangTerm,
 }
 
-impl Token for Unresolved {
+impl TokenMeta for Unresolved {
+    const LEXEM: &'static str = "";
     fn parse(term: &OtpErlangTerm) -> Result<Box<dyn Token>, &'static str> {
         Ok(Box::new(Unresolved { term: term.clone() }))
     }
+}
 
+impl Token for Unresolved {
     fn translate(&self) -> Option<String> {
         let tr = format!("{:?}", self.term);
         Some(tr)
@@ -179,9 +202,10 @@ struct Label {
     num: i32,
 }
 
-impl Token for Label {
+impl TokenMeta for Label {
+    const LEXEM: &'static str = "label";
     fn parse(term: &OtpErlangTerm) -> Result<Box<dyn Token>, &'static str> {
-        parse_prolog!(label_tuple, term, "label");
+        extrtuple!(label_tuple, term);
         let OtpErlangTerm::OtpErlangInteger(num) = &label_tuple[1] else {
             return Err("Label must have integer as it's 2nd element");
         };
@@ -189,7 +213,9 @@ impl Token for Label {
         let label = Label { num: *num };
         Ok(Box::new(label))
     }
+}
 
+impl Token for Label {
     fn translate(&self) -> Option<String> {
         None
     }
@@ -204,9 +230,10 @@ struct XReg {
     num: i32,
 }
 
-impl Token for XReg {
+impl TokenMeta for XReg {
+    const LEXEM: &'static str = "x";
     fn parse(term: &OtpErlangTerm) -> Result<Box<dyn Token>, &'static str> {
-        parse_prolog!(xreg_tuple, term, "x");
+        extrtuple!(xreg_tuple, term);
         let OtpErlangTerm::OtpErlangInteger(num) = &xreg_tuple[1] else {
             return Err("XReg must have integer as it's 2nd element");
         };
@@ -214,7 +241,9 @@ impl Token for XReg {
         let xreg = XReg { num: *num };
         Ok(Box::new(xreg))
     }
+}
 
+impl Token for XReg {
     fn translate(&self) -> Option<String> {
         Some(format!("X{}", self.num))
     }
@@ -224,9 +253,10 @@ struct YReg {
     num: i32,
 }
 
-impl Token for YReg {
+impl TokenMeta for YReg {
+    const LEXEM: &'static str = "y";
     fn parse(term: &OtpErlangTerm) -> Result<Box<dyn Token>, &'static str> {
-        parse_prolog!(yreg_tuple, term, "y");
+        extrtuple!(yreg_tuple, term);
         let OtpErlangTerm::OtpErlangInteger(num) = &yreg_tuple[1] else {
             return Err("YReg must have integer as it's 2nd element");
         };
@@ -234,7 +264,9 @@ impl Token for YReg {
         let yreg = YReg { num: *num };
         Ok(Box::new(yreg))
     }
+}
 
+impl Token for YReg {
     fn translate(&self) -> Option<String> {
         Some(format!("Y{}", self.num))
     }
@@ -245,15 +277,16 @@ struct Move {
     rvalue: Box<dyn Token>,
 }
 
-impl Token for Move {
+impl TokenMeta for Move {
+    const LEXEM: &'static str = "move";
     fn parse(term: &OtpErlangTerm) -> Result<Box<dyn Token>, &'static str> {
-        parse_prolog!(move_tuple, term, "move");
+        extrtuple!(move_tuple, term);
         if (move_tuple.len() != 3) {
             return Err("Move tuple must have 3 elements");
         }
 
-        let rvalue = select_production(&move_tuple[1], &prodlist!(XReg, YReg, Literal));
-        let lvalue = select_production(&move_tuple[2], &prodlist!(XReg, YReg));
+        let rvalue = parse_next_token!(&move_tuple[1], XReg, YReg, Literal);
+        let lvalue = parse_next_token!(&move_tuple[2], XReg, YReg);
         let move_token = Move {
             rvalue: rvalue,
             lvalue: lvalue,
@@ -261,7 +294,9 @@ impl Token for Move {
 
         Ok(Box::new(move_token))
     }
+}
 
+impl Token for Move {
     fn translate(&self) -> Option<String> {
         let tr1 = self.lvalue.translate().unwrap_or(String::from(""));
         let tr2 = self.rvalue.translate().unwrap_or(String::from(""));
@@ -274,9 +309,10 @@ struct CallExt {
     func: Box<dyn Token>,
 }
 
-impl Token for CallExt {
+impl TokenMeta for CallExt {
+    const LEXEM: &'static str = "call_ext";
     fn parse(term: &OtpErlangTerm) -> Result<Box<dyn Token>, &'static str> {
-        parse_prolog!(callext_tuple, term, "call_ext");
+        extrtuple!(callext_tuple, term);
         if callext_tuple.len() != 3 {
             return Err("CallExt tuple must be 3 items long");
         }
@@ -284,7 +320,7 @@ impl Token for CallExt {
         let OtpErlangTerm::OtpErlangInteger(arity) = &callext_tuple[1] else {
             return Err("CallExt tuple must contain arity integer as 2nd element");
         };
-        let func = select_production(&callext_tuple[2], &prodlist!(ExtFunc));
+        let func = parse_next_token!(&callext_tuple[2], ExtFunc);
 
         let call_ext = CallExt {
             arity: *arity,
@@ -293,7 +329,9 @@ impl Token for CallExt {
 
         Ok(Box::new(call_ext))
     }
+}
 
+impl Token for CallExt {
     fn translate(&self) -> Option<String> {
         self.func.translate()
     }
@@ -305,9 +343,10 @@ struct ExtFunc {
     arity: i32,
 }
 
-impl Token for ExtFunc {
+impl TokenMeta for ExtFunc {
+    const LEXEM: &'static str = "extfunc";
     fn parse(term: &OtpErlangTerm) -> Result<Box<dyn Token>, &'static str> {
-        parse_prolog!(extfunc_tuple, term, "extfunc");
+        extrtuple!(extfunc_tuple, term);
         if extfunc_tuple.len() != 4 {
             return Err("ExtFunc tuple must contain 4 elements");
         }
@@ -326,7 +365,9 @@ impl Token for ExtFunc {
 
         Ok(Box::new(ext_func))
     }
+}
 
+impl Token for ExtFunc {
     fn translate(&self) -> Option<String> {
         let args = (0..self.arity)
             .map(|x| format!("X{}", x))
@@ -341,9 +382,10 @@ struct FLabel {
     num: i32,
 }
 
-impl Token for FLabel {
+impl TokenMeta for FLabel {
+    const LEXEM: &'static str = "f";
     fn parse(term: &OtpErlangTerm) -> Result<Box<dyn Token>, &'static str> {
-        parse_prolog!(flabel_tuple, term, "f");
+        extrtuple!(flabel_tuple, term);
         let OtpErlangTerm::OtpErlangInteger(num) = &flabel_tuple[1] else {
             return Err("FLabel must have integer as it's 2nd element");
         };
@@ -351,7 +393,9 @@ impl Token for FLabel {
         let flabel = FLabel { num: *num };
         Ok(Box::new(flabel))
     }
+}
 
+impl Token for FLabel {
     fn translate(&self) -> Option<String> {
         None
     }
@@ -365,16 +409,17 @@ struct GcBif {
     store: Box<dyn Token>,
 }
 
-impl Token for GcBif {
+impl TokenMeta for GcBif {
+    const LEXEM: &'static str = "gc_bif";
     fn parse(term: &OtpErlangTerm) -> Result<Box<dyn Token>, &'static str> {
-        parse_prolog!(gcbif_tuple, term, "gc_bif");
+        extrtuple!(gcbif_tuple, term);
         if gcbif_tuple.len() != 6 {
             return Err("GcBif tuple must be 6 items long");
         }
 
         let name = atomutf8_to_string(&gcbif_tuple[1])?;
 
-        let fallback = <FLabel as Token>::parse(&gcbif_tuple[2])?;
+        let fallback = parse_next_token!(&gcbif_tuple[2], FLabel);
 
         let OtpErlangTerm::OtpErlangInteger(arity) = &gcbif_tuple[3] else {
             return Err("GcBif tuple must contain arity integer as 5th element");
@@ -385,11 +430,11 @@ impl Token for GcBif {
         };
         let mut args: Vec<Box<dyn Token>> = Vec::with_capacity(args_terms.len());
         for arg_term in args_terms {
-            let token = select_production(arg_term, &prodlist!(XReg, YReg));
+            let token = parse_next_token!(arg_term, XReg, YReg);
             args.push(token);
         }
 
-        let store = select_production(&gcbif_tuple[5], &prodlist!(XReg, YReg));
+        let store = parse_next_token!(&gcbif_tuple[5], XReg, YReg);
 
         let gcbif = GcBif {
             name: name,
@@ -401,7 +446,9 @@ impl Token for GcBif {
 
         Ok(Box::new(gcbif))
     }
+}
 
+impl Token for GcBif {
     fn translate(&self) -> Option<String> {
         let args = self
             .args
@@ -416,20 +463,25 @@ impl Token for GcBif {
 }
 
 struct Literal {
-    s: String
+    s: String,
 }
 
-impl Token for Literal {
+impl TokenMeta for Literal {
+    const LEXEM: &'static str = "literal";
     fn parse(term: &OtpErlangTerm) -> Result<Box<dyn Token>, &'static str> {
-        parse_prolog!(literal_tuple, term, "literal");
+        extrtuple!(literal_tuple, term);
         let OtpErlangTerm::OtpErlangString(s) = &literal_tuple[1] else {
             return Err("Literal tuple must contain a string as the 2nd element");
         };
-        
-        let literal = Literal { s: String::from(std::str::from_utf8(s).map_err(|_| "Cannot extract string")?) };
+
+        let literal = Literal {
+            s: String::from(std::str::from_utf8(s).map_err(|_| "Cannot extract string")?),
+        };
         Ok(Box::new(literal))
     }
+}
 
+impl Token for Literal {
     fn translate(&self) -> Option<String> {
         Some(format!("\"{}\"", self.s.clone()))
     }
@@ -440,9 +492,10 @@ struct CallExtLast {
     func: Box<dyn Token>,
 }
 
-impl Token for CallExtLast {
+impl TokenMeta for CallExtLast {
+    const LEXEM: &'static str = "call_ext_last";
     fn parse(term: &OtpErlangTerm) -> Result<Box<dyn Token>, &'static str> {
-        parse_prolog!(callext_tuple, term, "call_ext_last");
+        extrtuple!(callext_tuple, term);
         if callext_tuple.len() != 4 {
             return Err("CallExtLast tuple must be 4 items long");
         }
@@ -450,7 +503,7 @@ impl Token for CallExtLast {
         let OtpErlangTerm::OtpErlangInteger(arity) = &callext_tuple[1] else {
             return Err("CallExtLast tuple must contain arity integer as 2nd element");
         };
-        let func = select_production(&callext_tuple[2], &prodlist!(ExtFunc));
+        let func = parse_next_token!(&callext_tuple[2], ExtFunc);
 
         let call_ext = CallExt {
             arity: *arity,
@@ -459,7 +512,9 @@ impl Token for CallExtLast {
 
         Ok(Box::new(call_ext))
     }
+}
 
+impl Token for CallExtLast {
     fn translate(&self) -> Option<String> {
         self.func.translate()
     }
@@ -470,9 +525,10 @@ struct CallExtOnly {
     func: Box<dyn Token>,
 }
 
-impl Token for CallExtOnly {
+impl TokenMeta for CallExtOnly {
+    const LEXEM: &'static str = "call_ext_only";
     fn parse(term: &OtpErlangTerm) -> Result<Box<dyn Token>, &'static str> {
-        parse_prolog!(callext_tuple, term, "call_ext_only");
+        extrtuple!(callext_tuple, term);
         if callext_tuple.len() != 3 {
             return Err("CallExtOnly tuple must be 3 items long");
         }
@@ -480,7 +536,7 @@ impl Token for CallExtOnly {
         let OtpErlangTerm::OtpErlangInteger(arity) = &callext_tuple[1] else {
             return Err("CallExtOnly tuple must contain arity integer as 2nd element");
         };
-        let func = select_production(&callext_tuple[2], &prodlist!(ExtFunc));
+        let func = parse_next_token!(&callext_tuple[2], ExtFunc);
 
         let call_ext = CallExt {
             arity: *arity,
@@ -489,7 +545,9 @@ impl Token for CallExtOnly {
 
         Ok(Box::new(call_ext))
     }
+}
 
+impl Token for CallExtOnly {
     fn translate(&self) -> Option<String> {
         self.func.translate()
     }
