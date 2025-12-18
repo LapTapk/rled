@@ -4,7 +4,6 @@ This project is aimed to enhance my programming skills in general.
 On this stage rled must satisfy following requirements:
 - Mostly imperative pseudo code style
 - Display readable control flow (like `if` with indentation)
-- Placing X registers to a function args
 # Example
 BEAM code
 ```
@@ -21,15 +20,20 @@ BEAM code
 {call_ext_last,2,{extfunc,io,format,2},3},
 {label,8},
 {move,{literal,":(\n"},{x,0}},
-{call_ext_last,1,{extfunc,io,format,1},3
+{call_ext_last,1,{extfunc,io,format,1},3}
 ```
 Pseudo code 
 ```
-y0 = getenv("FLAG")
-y1 = length(y2)
-if(y1 >= 2):
-	io:format("~s", [y0])
+X0 = "FLAG"
+X0 = getenv(X0)
+Y0 = X0
+Y1 = length(Y2)
+if y1 >= 2:    
+    X1 = [Y0]
+    X0 = "~s"
+	io:format(X0, X1)
 else:
-	io:format(":(\n")
+    X0 = ":(\n"
+	io:format(X0)
 ```
 
