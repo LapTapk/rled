@@ -233,7 +233,7 @@ impl TokenMeta for Label {
 
 impl Token for Label {
     fn translate(&self) -> Option<String> {
-        None
+        Some(format!("label{}:", self.num))
     }
 }
 
