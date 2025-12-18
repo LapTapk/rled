@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use std::collections::LinkedList;
 
 pub trait TokenMeta {
-    const LEXEM: &'static str;
+    const LEXEME: &'static str;
     fn parse(term: &OtpErlangTerm) -> Result<Box<dyn Token>, &'static str>;
 }
 
@@ -25,7 +25,7 @@ macro_rules! emptyinstr {
     ($type:ident, $name:literal) => {
         struct $type {}
         impl TokenMeta for $type {
-            const LEXEM: &'static str = $name;
+            const LEXEME: &'static str = $name;
             fn parse(term: &OtpErlangTerm) -> Result<Box<dyn Token>, &'static str> {
                 extrtuple!(tuple, term);
                 Ok(Box::new($type {}))
@@ -48,7 +48,7 @@ macro_rules! parse_next_token {
                     let lexem = atomutf8_to_string(&tuple[0])?;
                     let token_res = match lexem.as_str() {
                         $(
-                            <$token as TokenMeta>::LEXEM => <$token as TokenMeta>::parse,
+                            <$token as TokenMeta>::LEXEME => <$token as TokenMeta>::parse,
                         )*
                         _ => <Unresolved as TokenMeta>::parse
                     }($term);
@@ -62,7 +62,7 @@ macro_rules! parse_next_token {
                     let lexem = atomutf8_to_string($term)?;
                     let token_res = match lexem.as_str() {
                         $(
-                            <$token as TokenMeta>::LEXEM => <$token as TokenMeta>::parse,
+                            <$token as TokenMeta>::LEXEME => <$token as TokenMeta>::parse,
                         )*
                         _ => <Unresolved as TokenMeta>::parse
                     }($term);
@@ -84,7 +84,7 @@ pub struct Module {
 }
 
 impl TokenMeta for Module {
-    const LEXEM: &'static str = "beam_file";
+    const LEXEME: &'static str = "beam_file";
     fn parse(term: &OtpErlangTerm) -> Result<Box<dyn Token>, &'static str> {
         extrtuple!(module, term);
 
@@ -129,7 +129,7 @@ pub struct Func {
 }
 
 impl TokenMeta for Func {
-    const LEXEM: &'static str = "function";
+    const LEXEME: &'static str = "function";
     fn parse(term: &OtpErlangTerm) -> Result<Box<dyn Token>, &'static str> {
         extrtuple!(func_tuple, term);
 
@@ -201,7 +201,7 @@ struct Unresolved {
 }
 
 impl TokenMeta for Unresolved {
-    const LEXEM: &'static str = "";
+    const LEXEME: &'static str = "";
     fn parse(term: &OtpErlangTerm) -> Result<Box<dyn Token>, &'static str> {
         Ok(Box::new(Unresolved { term: term.clone() }))
     }
@@ -219,7 +219,7 @@ struct Label {
 }
 
 impl TokenMeta for Label {
-    const LEXEM: &'static str = "label";
+    const LEXEME: &'static str = "label";
     fn parse(term: &OtpErlangTerm) -> Result<Box<dyn Token>, &'static str> {
         extrtuple!(label_tuple, term);
         let OtpErlangTerm::OtpErlangInteger(num) = &label_tuple[1] else {
@@ -242,7 +242,7 @@ struct XReg {
 }
 
 impl TokenMeta for XReg {
-    const LEXEM: &'static str = "x";
+    const LEXEME: &'static str = "x";
     fn parse(term: &OtpErlangTerm) -> Result<Box<dyn Token>, &'static str> {
         extrtuple!(xreg_tuple, term);
         let OtpErlangTerm::OtpErlangInteger(num) = &xreg_tuple[1] else {
@@ -265,7 +265,7 @@ struct YReg {
 }
 
 impl TokenMeta for YReg {
-    const LEXEM: &'static str = "y";
+    const LEXEME: &'static str = "y";
     fn parse(term: &OtpErlangTerm) -> Result<Box<dyn Token>, &'static str> {
         extrtuple!(yreg_tuple, term);
         let OtpErlangTerm::OtpErlangInteger(num) = &yreg_tuple[1] else {
@@ -289,7 +289,7 @@ struct Move {
 }
 
 impl TokenMeta for Move {
-    const LEXEM: &'static str = "move";
+    const LEXEME: &'static str = "move";
     fn parse(term: &OtpErlangTerm) -> Result<Box<dyn Token>, &'static str> {
         extrtuple!(move_tuple, term);
         if (move_tuple.len() != 3) {
@@ -321,7 +321,7 @@ struct CallExt {
 }
 
 impl TokenMeta for CallExt {
-    const LEXEM: &'static str = "call_ext";
+    const LEXEME: &'static str = "call_ext";
     fn parse(term: &OtpErlangTerm) -> Result<Box<dyn Token>, &'static str> {
         extrtuple!(callext_tuple, term);
         if callext_tuple.len() != 3 {
@@ -355,7 +355,7 @@ struct ExtFunc {
 }
 
 impl TokenMeta for ExtFunc {
-    const LEXEM: &'static str = "extfunc";
+    const LEXEME: &'static str = "extfunc";
     fn parse(term: &OtpErlangTerm) -> Result<Box<dyn Token>, &'static str> {
         extrtuple!(extfunc_tuple, term);
         if extfunc_tuple.len() != 4 {
@@ -394,7 +394,7 @@ struct FLabel {
 }
 
 impl TokenMeta for FLabel {
-    const LEXEM: &'static str = "f";
+    const LEXEME: &'static str = "f";
     fn parse(term: &OtpErlangTerm) -> Result<Box<dyn Token>, &'static str> {
         extrtuple!(flabel_tuple, term);
         let OtpErlangTerm::OtpErlangInteger(num) = &flabel_tuple[1] else {
@@ -421,7 +421,7 @@ struct GcBif {
 }
 
 impl TokenMeta for GcBif {
-    const LEXEM: &'static str = "gc_bif";
+    const LEXEME: &'static str = "gc_bif";
     fn parse(term: &OtpErlangTerm) -> Result<Box<dyn Token>, &'static str> {
         extrtuple!(gcbif_tuple, term);
         if gcbif_tuple.len() != 6 {
@@ -478,7 +478,7 @@ struct Literal {
 }
 
 impl TokenMeta for Literal {
-    const LEXEM: &'static str = "literal";
+    const LEXEME: &'static str = "literal";
     fn parse(term: &OtpErlangTerm) -> Result<Box<dyn Token>, &'static str> {
         extrtuple!(literal_tuple, term);
         let OtpErlangTerm::OtpErlangString(s) = &literal_tuple[1] else {
@@ -504,7 +504,7 @@ struct CallExtLast {
 }
 
 impl TokenMeta for CallExtLast {
-    const LEXEM: &'static str = "call_ext_last";
+    const LEXEME: &'static str = "call_ext_last";
     fn parse(term: &OtpErlangTerm) -> Result<Box<dyn Token>, &'static str> {
         extrtuple!(callext_tuple, term);
         if callext_tuple.len() != 4 {
@@ -537,7 +537,7 @@ struct CallExtOnly {
 }
 
 impl TokenMeta for CallExtOnly {
-    const LEXEM: &'static str = "call_ext_only";
+    const LEXEME: &'static str = "call_ext_only";
     fn parse(term: &OtpErlangTerm) -> Result<Box<dyn Token>, &'static str> {
         extrtuple!(callext_tuple, term);
         if callext_tuple.len() != 3 {
@@ -569,7 +569,7 @@ struct Integer {
 }
 
 impl TokenMeta for Integer {
-    const LEXEM: &'static str = "integer";
+    const LEXEME: &'static str = "integer";
     fn parse(term: &OtpErlangTerm) -> Result<Box<dyn Token>, &'static str> {
         extrtuple!(int_tuple, term);
         let OtpErlangTerm::OtpErlangInteger(num) = &int_tuple[1] else {
@@ -593,7 +593,7 @@ struct PutList {
 }
 
 impl TokenMeta for PutList {
-    const LEXEM: &'static str = "put_list";
+    const LEXEME: &'static str = "put_list";
     fn parse(term: &OtpErlangTerm) -> Result<Box<dyn Token>, &'static str> {
         extrtuple!(putlist_tuple, term);
 
@@ -627,7 +627,7 @@ impl Token for PutList {
 struct Nil {}
 
 impl TokenMeta for Nil {
-    const LEXEM: &'static str = "nil";
+    const LEXEME: &'static str = "nil";
     fn parse(term: &OtpErlangTerm) -> Result<Box<dyn Token>, &'static str> {
         Ok(Box::new(Nil {}))
     }
@@ -644,7 +644,7 @@ struct Atom {
 }
 
 impl TokenMeta for Atom {
-    const LEXEM: &'static str = "atom";
+    const LEXEME: &'static str = "atom";
     fn parse(term: &OtpErlangTerm) -> Result<Box<dyn Token>, &'static str> {
         extrtuple!(atom_tuple, term);
         let name = atomutf8_to_string(&atom_tuple[1])?;
