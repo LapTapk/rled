@@ -43,7 +43,7 @@ macro_rules! emptyinstr {
 type Production = fn(&OtpErlangTerm) -> Result<Box<dyn Token>, &'static str>;
 
 macro_rules! parse_next_token {
-    ($term:expr, $($token:ty),*) => {
+    ($term:expr => $($token:ty)|*) => {
         {
             let OtpErlangTerm::OtpErlangTuple(tuple) = $term else {
                 return Err("Token term must be a tuple");
@@ -81,7 +81,7 @@ impl TokenMeta for Module {
         };
         let mut funcs: Vec<Box<dyn Token>> = Vec::with_capacity(funcs_beam.len());
         for func_beam in funcs_beam {
-            let parsed_func = parse_next_token!(func_beam, Func);
+            let parsed_func = parse_next_token!(func_beam => Func);
             funcs.push(parsed_func);
         }
 
@@ -134,16 +134,16 @@ impl TokenMeta for Func {
         let mut instrs: Vec<Box<dyn Token>> = Vec::with_capacity(instrs_list.len());
         for instr_term in instrs_list {
             let parsed_instr = parse_next_token!(
-                instr_term,
-                Move,
-                Label,
-                FuncInfo,
-                Allocate,
-                InitYRegs,
-                CallExt,
-                GcBif,
-                Line,
-                CallExtLast,
+                instr_term =>
+                Move |
+                Label |
+                FuncInfo |
+                Allocate |
+                InitYRegs |
+                CallExt |
+                GcBif |
+                Line |
+                CallExtLast |
                 CallExtOnly
             );
             instrs.push(parsed_instr);
@@ -285,8 +285,8 @@ impl TokenMeta for Move {
             return Err("Move tuple must have 3 elements");
         }
 
-        let rvalue = parse_next_token!(&move_tuple[1], XReg, YReg, Literal);
-        let lvalue = parse_next_token!(&move_tuple[2], XReg, YReg);
+        let rvalue = parse_next_token!(&move_tuple[1] => XReg | YReg | Literal);
+        let lvalue = parse_next_token!(&move_tuple[2] => XReg | YReg);
         let move_token = Move {
             rvalue: rvalue,
             lvalue: lvalue,
@@ -320,7 +320,7 @@ impl TokenMeta for CallExt {
         let OtpErlangTerm::OtpErlangInteger(arity) = &callext_tuple[1] else {
             return Err("CallExt tuple must contain arity integer as 2nd element");
         };
-        let func = parse_next_token!(&callext_tuple[2], ExtFunc);
+        let func = parse_next_token!(&callext_tuple[2] => ExtFunc);
 
         let call_ext = CallExt {
             arity: *arity,
@@ -419,7 +419,7 @@ impl TokenMeta for GcBif {
 
         let name = atomutf8_to_string(&gcbif_tuple[1])?;
 
-        let fallback = parse_next_token!(&gcbif_tuple[2], FLabel);
+        let fallback = parse_next_token!(&gcbif_tuple[2] => FLabel);
 
         let OtpErlangTerm::OtpErlangInteger(arity) = &gcbif_tuple[3] else {
             return Err("GcBif tuple must contain arity integer as 5th element");
@@ -430,11 +430,11 @@ impl TokenMeta for GcBif {
         };
         let mut args: Vec<Box<dyn Token>> = Vec::with_capacity(args_terms.len());
         for arg_term in args_terms {
-            let token = parse_next_token!(arg_term, XReg, YReg);
+            let token = parse_next_token!(arg_term => XReg | YReg);
             args.push(token);
         }
 
-        let store = parse_next_token!(&gcbif_tuple[5], XReg, YReg);
+        let store = parse_next_token!(&gcbif_tuple[5] => XReg | YReg);
 
         let gcbif = GcBif {
             name: name,
@@ -503,7 +503,7 @@ impl TokenMeta for CallExtLast {
         let OtpErlangTerm::OtpErlangInteger(arity) = &callext_tuple[1] else {
             return Err("CallExtLast tuple must contain arity integer as 2nd element");
         };
-        let func = parse_next_token!(&callext_tuple[2], ExtFunc);
+        let func = parse_next_token!(&callext_tuple[2] => ExtFunc);
 
         let call_ext = CallExt {
             arity: *arity,
@@ -536,7 +536,7 @@ impl TokenMeta for CallExtOnly {
         let OtpErlangTerm::OtpErlangInteger(arity) = &callext_tuple[1] else {
             return Err("CallExtOnly tuple must contain arity integer as 2nd element");
         };
-        let func = parse_next_token!(&callext_tuple[2], ExtFunc);
+        let func = parse_next_token!(&callext_tuple[2] => ExtFunc);
 
         let call_ext = CallExt {
             arity: *arity,
