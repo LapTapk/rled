@@ -384,7 +384,7 @@ impl Token for ExtFunc {
             .map(|x| format!("X{}", x))
             .collect::<Vec<_>>()
             .join(", ");
-        let tr = format!("X0 = {}:{}({})", self.module, self.name, args);
+        let tr = format!("{}:{}({})", self.module, self.name, args);
         Some(tr)
     }
 }
@@ -516,7 +516,7 @@ impl TokenMeta for CallExtLast {
         };
         let func = parse_next_token!(&callext_tuple[2] => ExtFunc);
 
-        let call_ext = CallExt {
+        let call_ext = CallExtLast {
             arity: *arity,
             func: func,
         };
@@ -527,7 +527,7 @@ impl TokenMeta for CallExtLast {
 
 impl Token for CallExtLast {
     fn translate(&self) -> Option<String> {
-        self.func.translate()
+        Some(format!("return {}", self.func.translate().unwrap_or("ERROR".into())))
     }
 }
 
