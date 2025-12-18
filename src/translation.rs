@@ -484,9 +484,9 @@ impl TokenMeta for Literal {
         let OtpErlangTerm::OtpErlangString(s) = &literal_tuple[1] else {
             return Err("Literal tuple must contain a string as the 2nd element");
         };
-
+        
         let literal = Literal {
-            s: String::from(std::str::from_utf8(s).map_err(|_| "Cannot extract string")?),
+            s: String::from(std::str::from_utf8(s).map_err(|_| "Cannot extract string")?)
         };
         Ok(Box::new(literal))
     }
@@ -494,7 +494,7 @@ impl TokenMeta for Literal {
 
 impl Token for Literal {
     fn translate(&self) -> Option<String> {
-        Some(format!("\"{}\"", self.s.clone()))
+        Some(format!("{:?}", self.s.clone()))
     }
 }
 
