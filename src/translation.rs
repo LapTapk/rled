@@ -3,15 +3,17 @@ use erlang::OtpErlangTerm;
 use once_cell::sync::Lazy;
 use std::collections::HashMap;
 use std::collections::LinkedList;
+use downcast_rs::{impl_downcast, Downcast};
 
 pub trait TokenMeta {
     const LEXEME: &'static str;
     fn parse(term: &OtpErlangTerm) -> Result<Box<dyn Token>, &'static str>;
 }
 
-pub trait Token {
+pub trait Token: Downcast {
     fn translate(&self) -> Option<String>;
 }
+impl_downcast!(Token);
 
 macro_rules! extrtuple {
     ($tuple_name:ident, $term:expr) => {
@@ -590,6 +592,7 @@ struct PutList {
     head: Box<dyn Token>,
     tail: Box<dyn Token>,
     store: Box<dyn Token>,
+    tail_is_nil: bool
 }
 
 impl TokenMeta for PutList {
@@ -602,13 +605,20 @@ impl TokenMeta for PutList {
         }
 
         let head = parse_next_token!(&putlist_tuple[1] => YReg | XReg);
+
         let tail = parse_next_token!(&putlist_tuple[2] => YReg | XReg | Nil);
+        let mut tail_is_nil = false;
+        if let Some(_) = tail.downcast_ref::<Nil>() {
+            tail_is_nil = true;
+        }
+
         let store = parse_next_token!(&putlist_tuple[3] => YReg | XReg);
 
         let put_list = PutList {
             head: head,
             tail: tail,
             store: store,
+            tail_is_nil
         };
 
         Ok(Box::new(put_list))
@@ -618,9 +628,14 @@ impl TokenMeta for PutList {
 impl Token for PutList {
     fn translate(&self) -> Option<String> {
         let head_tr = self.head.translate().unwrap_or("".into());
-        let tail_tr = self.tail.translate().unwrap_or("".into());
         let store_tr = self.store.translate().unwrap_or("".into());
-        Some(format!("{} = [{} | {}]", store_tr, head_tr, tail_tr))
+        if(self.tail_is_nil) {
+            Some(format!("{} = [{}]", store_tr, head_tr))
+        }
+        else {
+            let tail_tr = self.tail.translate().unwrap_or("".into());
+            Some(format!("{} = [{} | {}]", store_tr, head_tr, tail_tr))
+        }
     }
 }
 
