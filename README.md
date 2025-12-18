@@ -1,9 +1,7 @@
 # Little Erlang Decompiler written in Rust
 This project is aimed to enhance my programming skills in general.
 # Developing version 0.1
-On this stage rled must satisfy following requirements:
-- Mostly imperative pseudo code style
-- Display readable control flow (like `if` with indentation)
+On this stage rled must be like BEAM pretty printer
 # Example
 BEAM code
 ```
@@ -28,12 +26,14 @@ X0 = "FLAG"
 X0 = getenv(X0)
 Y0 = X0
 Y1 = length(Y2)
-if y1 >= 2:    
-    X1 = [Y0]
-    X0 = "~s"
-	io:format(X0, X1)
-else:
-    X0 = ":(\n"
-	io:format(X0)
+
+if y1 >= 2: goto label8   
+X1 = [Y0]
+X0 = "~s"
+return io:format(X0, X1)
+
+label8:
+X0 = ":(\n"
+return io:format(X0)
 ```
 
