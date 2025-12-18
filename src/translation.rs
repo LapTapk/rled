@@ -40,8 +40,6 @@ macro_rules! emptyinstr {
     };
 }
 
-type Production = fn(&OtpErlangTerm) -> Result<Box<dyn Token>, &'static str>;
-
 macro_rules! parse_next_token {
     ($term:expr => $($token:ty)|*) => {
         {
