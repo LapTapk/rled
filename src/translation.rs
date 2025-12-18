@@ -85,7 +85,7 @@ impl Token for Module {
     }
 
     fn translate(&self) -> Option<String> {
-        let mut tr = vec![format!("-module({}).", self.name)];
+        let mut tr = vec![format!("-module({}).\n", self.name)];
         for func in &self.funcs {
             let func_tr_option = func.translate();
             let Some(func_tr) = func_tr_option else {
@@ -93,7 +93,7 @@ impl Token for Module {
             };
             tr.push(func_tr)
         }
-        Some(tr.join("\n"))
+        Some(tr.join("\n\n"))
     }
 }
 
@@ -125,7 +125,7 @@ impl Token for Func {
             let parsed_instr = select_production(
                 instr_term,
                 &prodlist!(
-                    Move, Label, FuncInfo, Allocate, InitYRegs, CallExt, ExtFunc, GcBif, Line
+                    Move, Label, FuncInfo, Allocate, InitYRegs, CallExt, GcBif, Line, CallExtLast, CallExtOnly
                 ),
             );
             instrs.push(parsed_instr);
@@ -384,12 +384,12 @@ impl Token for GcBif {
             return Err("GcBif tuple must contain args list as 5th element");
         };
         let mut args: Vec<Box<dyn Token>> = Vec::with_capacity(args_terms.len());
-        for term in args_terms {
-            let token = select_production(term, &prodlist!(XReg, YReg));
+        for arg_term in args_terms {
+            let token = select_production(arg_term, &prodlist!(XReg, YReg));
             args.push(token);
         }
 
-        let store = select_production(term, &prodlist!(XReg, YReg));
+        let store = select_production(&gcbif_tuple[5], &prodlist!(XReg, YReg));
 
         let gcbif = GcBif {
             name: name,
@@ -432,5 +432,65 @@ impl Token for Literal {
 
     fn translate(&self) -> Option<String> {
         Some(format!("\"{}\"", self.s.clone()))
+    }
+}
+
+struct CallExtLast {
+    arity: i32,
+    func: Box<dyn Token>,
+}
+
+impl Token for CallExtLast {
+    fn parse(term: &OtpErlangTerm) -> Result<Box<dyn Token>, &'static str> {
+        parse_prolog!(callext_tuple, term, "call_ext_last");
+        if callext_tuple.len() != 4 {
+            return Err("CallExtLast tuple must be 4 items long");
+        }
+
+        let OtpErlangTerm::OtpErlangInteger(arity) = &callext_tuple[1] else {
+            return Err("CallExtLast tuple must contain arity integer as 2nd element");
+        };
+        let func = select_production(&callext_tuple[2], &prodlist!(ExtFunc));
+
+        let call_ext = CallExt {
+            arity: *arity,
+            func: func,
+        };
+
+        Ok(Box::new(call_ext))
+    }
+
+    fn translate(&self) -> Option<String> {
+        self.func.translate()
+    }
+}
+
+struct CallExtOnly {
+    arity: i32,
+    func: Box<dyn Token>,
+}
+
+impl Token for CallExtOnly {
+    fn parse(term: &OtpErlangTerm) -> Result<Box<dyn Token>, &'static str> {
+        parse_prolog!(callext_tuple, term, "call_ext_only");
+        if callext_tuple.len() != 3 {
+            return Err("CallExtOnly tuple must be 3 items long");
+        }
+
+        let OtpErlangTerm::OtpErlangInteger(arity) = &callext_tuple[1] else {
+            return Err("CallExtOnly tuple must contain arity integer as 2nd element");
+        };
+        let func = select_production(&callext_tuple[2], &prodlist!(ExtFunc));
+
+        let call_ext = CallExt {
+            arity: *arity,
+            func: func,
+        };
+
+        Ok(Box::new(call_ext))
+    }
+
+    fn translate(&self) -> Option<String> {
+        self.func.translate()
     }
 }
