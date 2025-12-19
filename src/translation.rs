@@ -13,7 +13,9 @@ pub fn translate(term: &OtpErlangTerm) -> String {
         return "Failed to translate BEAM file".into();
     };
 
-    module.translate().unwrap_or("Failed to translate BEAM file".into())
+    module
+        .translate()
+        .unwrap_or("Failed to translate BEAM file".into())
 }
 
 type Parsed = Result<Box<dyn Token>, &'static str>;
