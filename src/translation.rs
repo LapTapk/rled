@@ -5,9 +5,11 @@ use once_cell::sync::Lazy;
 use std::collections::HashMap;
 use std::collections::LinkedList;
 
+type Parsed = Result<Box<dyn Token>, &'static str>;
+
 pub trait TokenMeta {
     const LEXEME: &'static str;
-    fn parse(term: &OtpErlangTerm) -> Result<Box<dyn Token>, &'static str>;
+    fn parse(term: &OtpErlangTerm) -> Parsed;
 }
 
 pub trait Token: Downcast {
@@ -28,7 +30,7 @@ macro_rules! emptyinstr {
         struct $type {}
         impl TokenMeta for $type {
             const LEXEME: &'static str = $name;
-            fn parse(term: &OtpErlangTerm) -> Result<Box<dyn Token>, &'static str> {
+            fn parse(term: &OtpErlangTerm) -> Parsed {
                 extrtuple!(tuple, term);
                 Ok(Box::new($type {}))
             }
@@ -85,7 +87,7 @@ macro_rules! comptoken {
         struct $name;
         impl TokenMeta for $name {
             const LEXEME: &'static str = $lexeme;
-            fn parse(term: &OtpErlangTerm) -> Result<Box<dyn Token>, &'static str> {
+            fn parse(term: &OtpErlangTerm) -> Parsed {
                 Ok(Box::new($name {}))
             }
         }
@@ -105,7 +107,7 @@ pub struct Module {
 
 impl TokenMeta for Module {
     const LEXEME: &'static str = "beam_file";
-    fn parse(term: &OtpErlangTerm) -> Result<Box<dyn Token>, &'static str> {
+    fn parse(term: &OtpErlangTerm) -> Parsed {
         extrtuple!(module, term);
 
         let name = atomutf8_to_string(&module[1])?;
@@ -150,7 +152,7 @@ pub struct Func {
 
 impl TokenMeta for Func {
     const LEXEME: &'static str = "function";
-    fn parse(term: &OtpErlangTerm) -> Result<Box<dyn Token>, &'static str> {
+    fn parse(term: &OtpErlangTerm) -> Parsed {
         extrtuple!(func_tuple, term);
 
         let name = atomutf8_to_string(&func_tuple[1])?;
@@ -223,7 +225,7 @@ struct Unresolved {
 
 impl TokenMeta for Unresolved {
     const LEXEME: &'static str = "";
-    fn parse(term: &OtpErlangTerm) -> Result<Box<dyn Token>, &'static str> {
+    fn parse(term: &OtpErlangTerm) -> Parsed {
         Ok(Box::new(Unresolved { term: term.clone() }))
     }
 }
@@ -241,7 +243,7 @@ struct Label {
 
 impl TokenMeta for Label {
     const LEXEME: &'static str = "label";
-    fn parse(term: &OtpErlangTerm) -> Result<Box<dyn Token>, &'static str> {
+    fn parse(term: &OtpErlangTerm) -> Parsed {
         extrtuple!(label_tuple, term);
         let OtpErlangTerm::OtpErlangInteger(num) = &label_tuple[1] else {
             return Err("Label must have integer as it's 2nd element");
@@ -264,7 +266,7 @@ struct XReg {
 
 impl TokenMeta for XReg {
     const LEXEME: &'static str = "x";
-    fn parse(term: &OtpErlangTerm) -> Result<Box<dyn Token>, &'static str> {
+    fn parse(term: &OtpErlangTerm) -> Parsed {
         extrtuple!(xreg_tuple, term);
         let OtpErlangTerm::OtpErlangInteger(num) = &xreg_tuple[1] else {
             return Err("XReg must have integer as it's 2nd element");
@@ -287,7 +289,7 @@ struct YReg {
 
 impl TokenMeta for YReg {
     const LEXEME: &'static str = "y";
-    fn parse(term: &OtpErlangTerm) -> Result<Box<dyn Token>, &'static str> {
+    fn parse(term: &OtpErlangTerm) -> Parsed {
         extrtuple!(yreg_tuple, term);
         let OtpErlangTerm::OtpErlangInteger(num) = &yreg_tuple[1] else {
             return Err("YReg must have integer as it's 2nd element");
@@ -311,7 +313,7 @@ struct Move {
 
 impl TokenMeta for Move {
     const LEXEME: &'static str = "move";
-    fn parse(term: &OtpErlangTerm) -> Result<Box<dyn Token>, &'static str> {
+    fn parse(term: &OtpErlangTerm) -> Parsed {
         extrtuple!(move_tuple, term);
         if (move_tuple.len() != 3) {
             return Err("Move tuple must have 3 elements");
@@ -343,7 +345,7 @@ struct CallExt {
 
 impl TokenMeta for CallExt {
     const LEXEME: &'static str = "call_ext";
-    fn parse(term: &OtpErlangTerm) -> Result<Box<dyn Token>, &'static str> {
+    fn parse(term: &OtpErlangTerm) -> Parsed {
         extrtuple!(callext_tuple, term);
         if callext_tuple.len() != 3 {
             return Err("CallExt tuple must be 3 items long");
@@ -377,7 +379,7 @@ struct ExtFunc {
 
 impl TokenMeta for ExtFunc {
     const LEXEME: &'static str = "extfunc";
-    fn parse(term: &OtpErlangTerm) -> Result<Box<dyn Token>, &'static str> {
+    fn parse(term: &OtpErlangTerm) -> Parsed {
         extrtuple!(extfunc_tuple, term);
         if extfunc_tuple.len() != 4 {
             return Err("ExtFunc tuple must contain 4 elements");
@@ -416,7 +418,7 @@ struct FLabel {
 
 impl TokenMeta for FLabel {
     const LEXEME: &'static str = "f";
-    fn parse(term: &OtpErlangTerm) -> Result<Box<dyn Token>, &'static str> {
+    fn parse(term: &OtpErlangTerm) -> Parsed {
         extrtuple!(flabel_tuple, term);
         let OtpErlangTerm::OtpErlangInteger(num) = &flabel_tuple[1] else {
             return Err("FLabel must have integer as it's 2nd element");
@@ -443,7 +445,7 @@ struct GcBif {
 
 impl TokenMeta for GcBif {
     const LEXEME: &'static str = "gc_bif";
-    fn parse(term: &OtpErlangTerm) -> Result<Box<dyn Token>, &'static str> {
+    fn parse(term: &OtpErlangTerm) -> Parsed {
         extrtuple!(gcbif_tuple, term);
         if gcbif_tuple.len() != 6 {
             return Err("GcBif tuple must be 6 items long");
@@ -500,7 +502,7 @@ struct Literal {
 
 impl TokenMeta for Literal {
     const LEXEME: &'static str = "literal";
-    fn parse(term: &OtpErlangTerm) -> Result<Box<dyn Token>, &'static str> {
+    fn parse(term: &OtpErlangTerm) -> Parsed {
         extrtuple!(literal_tuple, term);
         let OtpErlangTerm::OtpErlangString(s) = &literal_tuple[1] else {
             return Err("Literal tuple must contain a string as the 2nd element");
@@ -526,7 +528,7 @@ struct CallExtLast {
 
 impl TokenMeta for CallExtLast {
     const LEXEME: &'static str = "call_ext_last";
-    fn parse(term: &OtpErlangTerm) -> Result<Box<dyn Token>, &'static str> {
+    fn parse(term: &OtpErlangTerm) -> Parsed {
         extrtuple!(callext_tuple, term);
         if callext_tuple.len() != 4 {
             return Err("CallExtLast tuple must be 4 items long");
@@ -562,7 +564,7 @@ struct CallExtOnly {
 
 impl TokenMeta for CallExtOnly {
     const LEXEME: &'static str = "call_ext_only";
-    fn parse(term: &OtpErlangTerm) -> Result<Box<dyn Token>, &'static str> {
+    fn parse(term: &OtpErlangTerm) -> Parsed {
         extrtuple!(callext_tuple, term);
         if callext_tuple.len() != 3 {
             return Err("CallExtOnly tuple must be 3 items long");
@@ -594,7 +596,7 @@ struct Integer {
 
 impl TokenMeta for Integer {
     const LEXEME: &'static str = "integer";
-    fn parse(term: &OtpErlangTerm) -> Result<Box<dyn Token>, &'static str> {
+    fn parse(term: &OtpErlangTerm) -> Parsed {
         extrtuple!(int_tuple, term);
         let OtpErlangTerm::OtpErlangInteger(num) = &int_tuple[1] else {
             return Err("Integer tuple must contain an integer as 2nd element");
@@ -619,7 +621,7 @@ struct PutList {
 
 impl TokenMeta for PutList {
     const LEXEME: &'static str = "put_list";
-    fn parse(term: &OtpErlangTerm) -> Result<Box<dyn Token>, &'static str> {
+    fn parse(term: &OtpErlangTerm) -> Parsed {
         extrtuple!(putlist_tuple, term);
 
         if putlist_tuple.len() != 4 {
@@ -664,7 +666,7 @@ struct Nil {}
 
 impl TokenMeta for Nil {
     const LEXEME: &'static str = "nil";
-    fn parse(term: &OtpErlangTerm) -> Result<Box<dyn Token>, &'static str> {
+    fn parse(term: &OtpErlangTerm) -> Parsed {
         Ok(Box::new(Nil {}))
     }
 }
@@ -681,7 +683,7 @@ struct Atom {
 
 impl TokenMeta for Atom {
     const LEXEME: &'static str = "atom";
-    fn parse(term: &OtpErlangTerm) -> Result<Box<dyn Token>, &'static str> {
+    fn parse(term: &OtpErlangTerm) -> Parsed {
         extrtuple!(atom_tuple, term);
         let name = atomutf8_to_string(&atom_tuple[1])?;
         let atom = Atom { name: name };
@@ -701,7 +703,7 @@ struct TInteger {
 
 impl TokenMeta for TInteger {
     const LEXEME: &'static str = "t_integer";
-    fn parse(term: &OtpErlangTerm) -> Result<Box<dyn Token>, &'static str> {
+    fn parse(term: &OtpErlangTerm) -> Parsed {
         extrtuple!(tint_tuple, term);
         let OtpErlangTerm::OtpErlangInteger(num) = &tint_tuple[1] else {
             return Err("TInteger tuple must contain an integer as 2nd element");
@@ -724,7 +726,7 @@ struct Tr {
 
 impl TokenMeta for Tr {
     const LEXEME: &'static str = "tr";
-    fn parse(term: &OtpErlangTerm) -> Result<Box<dyn Token>, &'static str> {
+    fn parse(term: &OtpErlangTerm) -> Parsed {
         extrtuple!(tr_tuple, term);
 
         if tr_tuple.len() != 3 {
@@ -754,7 +756,7 @@ struct Test {
 
 impl TokenMeta for Test {
     const LEXEME: &'static str = "test";
-    fn parse(term: &OtpErlangTerm) -> Result<Box<dyn Token>, &'static str> {
+    fn parse(term: &OtpErlangTerm) -> Parsed {
         extrtuple!(test_tuple, term);
         if test_tuple.len() != 4 {
             return Err("Test tuple must be 4 items long");
