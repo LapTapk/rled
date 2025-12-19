@@ -1,7 +1,14 @@
 # Little Erlang Decompiler written in Rust
 This project is aimed to enhance my programming skills in general.
-# Developing version 0.1
-On this stage rled must be like BEAM pretty printer
+# Version 0.1
+On this stage rled is:
+* like BEAM pretty printer
+* with extremely incomplete BEAM instruction set
+* architecture which allow adding tokens with ease
+
+Version 0.2 can be:
+* like BEAM pretty printer
+* with more complete, growing instruction set because of formed architecture
 # Example
 BEAM code
 ```
