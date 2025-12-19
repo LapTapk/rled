@@ -8,14 +8,22 @@ use std::collections::LinkedList;
 use std::fs::OpenOptions;
 use std::io::Write;
 
+pub fn translate(term: &OtpErlangTerm) -> String {
+    let Ok(module) = <Module as TokenMeta>::parse(term) else {
+        return "Failed to translate BEAM file".into();
+    };
+
+    module.translate().unwrap_or("Failed to translate BEAM file".into())
+}
+
 type Parsed = Result<Box<dyn Token>, &'static str>;
 
-pub trait TokenMeta {
+trait TokenMeta {
     const LEXEME: &'static str;
     fn parse(term: &OtpErlangTerm) -> Parsed;
 }
 
-pub trait Token: Downcast {
+trait Token: Downcast {
     fn translate(&self) -> Option<String>;
 }
 impl_downcast!(Token);
@@ -108,7 +116,7 @@ macro_rules! comptoken {
     }
 }
 
-pub struct Module {
+struct Module {
     name: String,
     funcs: Vec<Box<dyn Token>>,
 }
@@ -151,7 +159,7 @@ impl Token for Module {
     }
 }
 
-pub struct Func {
+struct Func {
     name: String,
     arity: i32,
     label: i32,

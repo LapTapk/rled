@@ -3,13 +3,41 @@
 mod translation;
 mod util;
 
-use crate::translation::*;
+use crate::translation::translate;
 use erlang::binary_to_term;
+use std::env;
+use std::process::{Command, ExitCode, Stdio};
 
-fn main() {
-    let data = std::fs::read("a").unwrap();
-    let term = binary_to_term(&data).unwrap();
-    let parsed = <Module as TokenMeta>::parse(&term).unwrap();
-    let tr = parsed.translate().unwrap();
-    println!("{}", tr);
+fn main() -> ExitCode {
+    let path = match env::args().nth(1) {
+        Some(p) => p,
+        None => {
+            eprintln!("Usage: rled <path>");
+            return ExitCode::FAILURE;
+        }
+    };
+
+    std::fs::create_dir("rled.tmp").expect("failed to create directory");
+    let status = match Command::new("./erl/beam_disasm.escript")
+        .arg(&path)
+        .arg("rled.tmp/etf")
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+    {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("Failed to execute {}: {}", path, e);
+            return ExitCode::FAILURE;
+        }
+    };
+
+    let etf = std::fs::read("rled.tmp/etf").expect("Failed to read ETF file of BEAM");
+    let term = binary_to_term(&etf).expect("Failed to parse ETF file of BEAM");
+    let result = translate(&term);
+    println!("{}", result);
+
+    std::fs::remove_dir_all("rled.tmp").expect("failed to remove directory");
+
+    ExitCode::from(status.code().unwrap_or(1) as u8)
 }
