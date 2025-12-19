@@ -5,6 +5,7 @@ On this stage rled is:
 * like BEAM pretty printer
 * with extremely incomplete BEAM instruction set
 * architecture which allow adding tokens with ease
+* it is not designed to perfectly decompile any instructions present in translation module (it may crash on some BEAMs)
 
 Version 0.2 can be:
 * like BEAM pretty printer
