@@ -37,7 +37,5 @@ fn main() -> ExitCode {
     let result = translate(&term);
     println!("{}", result);
 
-    std::fs::remove_dir_all("rled.tmp").expect("failed to remove directory");
-
     ExitCode::from(status.code().unwrap_or(1) as u8)
 }
