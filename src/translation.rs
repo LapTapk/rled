@@ -2,8 +2,11 @@ use crate::util::atomutf8_to_string;
 use downcast_rs::{Downcast, impl_downcast};
 use erlang::OtpErlangTerm;
 use once_cell::sync::Lazy;
+use std::any::type_name;
 use std::collections::HashMap;
 use std::collections::LinkedList;
+use std::fs::OpenOptions;
+use std::io::Write;
 
 type Parsed = Result<Box<dyn Token>, &'static str>;
 
@@ -52,12 +55,24 @@ macro_rules! _parse_next_token {
                 $(
                     <$token as TokenMeta>::LEXEME => <$token as TokenMeta>::parse,
                 )*
-                _ => <Unresolved as TokenMeta>::parse
+                _ => {
+                    let log = format!("0:{}:{:?}:{:?};", lexeme, $term, [$(type_name::<$token>(),)*]);
+                    writeln!(
+                        OpenOptions::new()
+                            .create(true)
+                            .append(true)
+                            .open("rled.log")
+                            .unwrap(),
+                        "{}",
+                        log
+                    );
+                    <Unresolved as TokenMeta>::parse
+                }
             }($term);
 
             match token_res {
                 Ok(token) => token,
-                _ => <Unresolved as TokenMeta>::parse($term).unwrap()
+                Err(s) => <Unresolved as TokenMeta>::parse($term).unwrap()
             }
         }
      }
