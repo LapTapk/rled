@@ -811,8 +811,13 @@ impl TokenMeta for Test {
 
 impl Token for Test {
     fn translate(&self) -> Option<String> {
-        let tr_arg1 = self.args[0].translate().unwrap_or("".into());
-        let tr_arg2 = self.args[1].translate().unwrap_or("".into());
+        let mut tr_arg1 = String::from("");
+        let mut tr_arg2 = String::from("");
+        if self.args.len() >= 2 {
+            tr_arg1 = self.args[0].translate().unwrap_or("".into());
+            tr_arg2 = self.args[1].translate().unwrap_or("".into());
+        }
+
         let tr_comp = self.comp.translate().unwrap_or("".into());
         let tr_fail = self.fail.translate().unwrap_or("".into());
         Some(format!(
