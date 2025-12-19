@@ -742,7 +742,7 @@ impl TokenMeta for Tr {
         }
 
         let reg = parse_next_token!(&tr_tuple[1] => YReg | XReg);
-        let ty = parse_next_token!(&tr_tuple[1] => TInteger);
+        let ty = parse_next_token!(&tr_tuple[2] => TInteger);
 
         let tr = Tr { reg, ty };
         Ok(Box::new(tr))
