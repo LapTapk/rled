@@ -1,10 +1,14 @@
 # Little Erlang Decompiler written in Rust
 This project is aimed to enhance my programming skills in general.
-# Developing version 0.1
-On this stage rled must satisfy following requirements:
-- Mostly imperative pseudo code style
-- Display readable control flow (like `if` with indentation)
-- Placing X registers to a function args
+# Version 0.1
+On this stage rled is:
+* like BEAM pretty printer
+* with extremely incomplete BEAM instruction set
+* architecture which allow adding tokens with ease
+
+Version 0.2 can be:
+* like BEAM pretty printer
+* with more complete, growing instruction set because of formed architecture
 # Example
 BEAM code
 ```
@@ -21,15 +25,22 @@ BEAM code
 {call_ext_last,2,{extfunc,io,format,2},3},
 {label,8},
 {move,{literal,":(\n"},{x,0}},
-{call_ext_last,1,{extfunc,io,format,1},3
+{call_ext_last,1,{extfunc,io,format,1},3}
 ```
 Pseudo code 
 ```
-y0 = getenv("FLAG")
-y1 = length(y2)
-if(y1 >= 2):
-	io:format("~s", [y0])
-else:
-	io:format(":(\n")
+X0 = "FLAG"
+X0 = getenv(X0)
+Y0 = X0
+Y1 = length(Y2)
+
+if y1 >= 2: goto label8   
+X1 = [Y0]
+X0 = "~s"
+return io:format(X0, X1)
+
+label8:
+X0 = ":(\n"
+return io:format(X0)
 ```
 

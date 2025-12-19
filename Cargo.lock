@@ -3,13 +3,27 @@
 version = 4
 
 [[package]]
+name = "downcast-rs"
+version = "2.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "117240f60069e65410b3ae1bb213295bd828f707b5bec6596a1afc8793ce0cbc"
+
+[[package]]
 name = "erlang_rs"
 version = "2.0.7"
 source = "git+https://github.com/LapTapk/erlang_rs#d4f19daba4367fe12bacd29cd697f2742833566a"
 
 [[package]]
+name = "once_cell"
+version = "1.21.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "42f5e15c9953c5e4ccceeb2e7382a716482c34515315f7b03532b8b4e8393d2d"
+
+[[package]]
 name = "rled"
 version = "0.1.0"
 dependencies = [
+ "downcast-rs",
  "erlang_rs",
+ "once_cell",
 ]
