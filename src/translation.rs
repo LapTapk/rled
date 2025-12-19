@@ -82,7 +82,19 @@ macro_rules! _parse_next_token {
 
             match token_res {
                 Ok(token) => token,
-                Err(s) => <Unresolved as TokenMeta>::parse($term).unwrap()
+                Err(s) => {
+                    let log = format!("1:{}:{}:{}:{:?}:{:?};", file!(), line!(), lexeme, $term, [$(type_name::<$token>(),)*]);
+                    writeln!(
+                        OpenOptions::new()
+                            .create(true)
+                            .append(true)
+                            .open("rled.tmp/rled.log")
+                            .unwrap(),
+                        "{}",
+                        log
+                    );
+                    <Unresolved as TokenMeta>::parse($term).unwrap()
+                }
             }
         }
      }
