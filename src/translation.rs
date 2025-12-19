@@ -83,7 +83,7 @@ macro_rules! _parse_next_token {
             match token_res {
                 Ok(token) => token,
                 Err(s) => {
-                    let log = format!("1:{}:{}:{}:{:?}:{:?};", file!(), line!(), lexeme, $term, [$(type_name::<$token>(),)*]);
+                    let log = format!("1:{}:{}:{}:{:?}:{};", file!(), line!(), lexeme, $term,  s);
                     writeln!(
                         OpenOptions::new()
                             .create(true)
