@@ -56,7 +56,7 @@ macro_rules! _parse_next_token {
                     <$token as TokenMeta>::LEXEME => <$token as TokenMeta>::parse,
                 )*
                 _ => {
-                    let log = format!("0:{}:{:?}:{:?};", lexeme, $term, [$(type_name::<$token>(),)*]);
+                    let log = format!("0:{}:{}:{}:{:?}:{:?};", file!(), line!(), lexeme, $term, [$(type_name::<$token>(),)*]);
                     writeln!(
                         OpenOptions::new()
                             .create(true)
