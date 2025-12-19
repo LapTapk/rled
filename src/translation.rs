@@ -13,7 +13,9 @@ pub fn translate(term: &OtpErlangTerm) -> String {
         return "Failed to translate BEAM file".into();
     };
 
-    module.translate().unwrap_or("Failed to translate BEAM file".into())
+    module
+        .translate()
+        .unwrap_or("Failed to translate BEAM file".into())
 }
 
 type Parsed = Result<Box<dyn Token>, &'static str>;
@@ -69,7 +71,7 @@ macro_rules! _parse_next_token {
                         OpenOptions::new()
                             .create(true)
                             .append(true)
-                            .open("rled.log")
+                            .open("rled.tmp/rled.log")
                             .unwrap(),
                         "{}",
                         log
@@ -80,7 +82,19 @@ macro_rules! _parse_next_token {
 
             match token_res {
                 Ok(token) => token,
-                Err(s) => <Unresolved as TokenMeta>::parse($term).unwrap()
+                Err(s) => {
+                    let log = format!("1:{}:{}:{}:{:?}:{:?};", file!(), line!(), lexeme, $term, [$(type_name::<$token>(),)*]);
+                    writeln!(
+                        OpenOptions::new()
+                            .create(true)
+                            .append(true)
+                            .open("rled.tmp/rled.log")
+                            .unwrap(),
+                        "{}",
+                        log
+                    );
+                    <Unresolved as TokenMeta>::parse($term).unwrap()
+                }
             }
         }
      }
@@ -797,8 +811,13 @@ impl TokenMeta for Test {
 
 impl Token for Test {
     fn translate(&self) -> Option<String> {
-        let tr_arg1 = self.args[0].translate().unwrap_or("".into());
-        let tr_arg2 = self.args[1].translate().unwrap_or("".into());
+        let mut tr_arg1 = String::from("");
+        let mut tr_arg2 = String::from("");
+        if self.args.len() >= 2 {
+            tr_arg1 = self.args[0].translate().unwrap_or("".into());
+            tr_arg2 = self.args[1].translate().unwrap_or("".into());
+        }
+
         let tr_comp = self.comp.translate().unwrap_or("".into());
         let tr_fail = self.fail.translate().unwrap_or("".into());
         Some(format!(
