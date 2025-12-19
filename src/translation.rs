@@ -69,7 +69,7 @@ macro_rules! _parse_next_token {
                         OpenOptions::new()
                             .create(true)
                             .append(true)
-                            .open("rled.log")
+                            .open("rled.tmp/rled.log")
                             .unwrap(),
                         "{}",
                         log
