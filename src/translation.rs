@@ -80,6 +80,24 @@ macro_rules! parse_next_token {
     };
 }
 
+macro_rules! comptoken {
+    {$name:ident, $lexeme:literal, $tr:literal} => {
+        struct $name;
+        impl TokenMeta for $name {
+            const LEXEME: &'static str = $lexeme;
+            fn parse(term: &OtpErlangTerm) -> Result<Box<dyn Token>, &'static str> {
+                Ok(Box::new($name {}))
+            }
+        }
+
+        impl Token for $name {
+            fn translate(&self) -> Option<String> {
+                Some($tr.into())       
+            }
+        }
+    }
+}
+
 pub struct Module {
     name: String,
     funcs: Vec<Box<dyn Token>>,
@@ -162,7 +180,8 @@ impl TokenMeta for Func {
                 CallExtLast |
                 CallExtOnly |
                 TestHeap |
-                PutList
+                PutList | 
+                Test
             );
             instrs.push(parsed_instr);
         }
@@ -410,7 +429,7 @@ impl TokenMeta for FLabel {
 
 impl Token for FLabel {
     fn translate(&self) -> Option<String> {
-        None
+        Some(format!("label{}", self.num))
     }
 }
 
@@ -675,6 +694,101 @@ impl Token for Atom {
         Some(self.name.clone())
     }
 }
+
+struct TInteger {
+    num: i32,
+}
+
+impl TokenMeta for TInteger {
+    const LEXEME: &'static str = "t_integer";
+    fn parse(term: &OtpErlangTerm) -> Result<Box<dyn Token>, &'static str> {
+        extrtuple!(tint_tuple, term);
+        let OtpErlangTerm::OtpErlangInteger(num) = &tint_tuple[1] else {
+            return Err("TInteger tuple must contain an integer as 2nd element");
+        };
+        let integer = TInteger { num: *num };
+        Ok(Box::new(integer))
+    }
+}
+
+impl Token for TInteger {
+    fn translate(&self) -> Option<String> {
+        Some(format!("{}", self.num))
+    }
+}
+
+struct Tr {
+    reg: Box<dyn Token>,
+    ty: Box<dyn Token>,
+}
+
+impl TokenMeta for Tr {
+    const LEXEME: &'static str = "tr";
+    fn parse(term: &OtpErlangTerm) -> Result<Box<dyn Token>, &'static str> {
+        extrtuple!(tr_tuple, term);
+
+        if tr_tuple.len() != 3 {
+            return Err("Tr tuple must be 3 items long");
+        }
+
+        let reg = parse_next_token!(&tr_tuple[1] => YReg | XReg);
+        let ty = parse_next_token!(&tr_tuple[1] => TInteger);
+
+        let tr = Tr { reg, ty };
+        Ok(Box::new(tr))
+    }
+}
+
+impl Token for Tr {
+    fn translate(&self) -> Option<String> {
+        let reg_tr = self.reg.translate().unwrap_or("".into());
+        Some(format!("{}", reg_tr))
+    }
+}
+
+struct Test {
+    comp: Box<dyn Token>,
+    fail: Box<dyn Token>,
+    args: Vec<Box<dyn Token>>,
+}
+
+impl TokenMeta for Test {
+    const LEXEME: &'static str = "test";
+    fn parse(term: &OtpErlangTerm) -> Result<Box<dyn Token>, &'static str> {
+        extrtuple!(test_tuple, term);
+        if test_tuple.len() != 4 {
+            return Err("Test tuple must be 4 items long");
+        }
+
+        let comp = parse_next_token!(&test_tuple[1] => IsGe | IsEqExact);
+        let fail = parse_next_token!(&test_tuple[2] => FLabel);
+        let OtpErlangTerm::OtpErlangList(args_terms) = &test_tuple[3] else {
+            return Err("Test tuple must have args list as 4th element");
+        };
+
+        let mut args: Vec<Box<dyn Token>> = Vec::with_capacity(args_terms.len());
+        for arg_term in args_terms {
+            let parsed_arg = parse_next_token!(arg_term => Integer | Tr | XReg | YReg);
+            args.push(parsed_arg);
+        }
+
+        let test = Test { comp, fail, args };
+        Ok(Box::new(test))
+    }
+}
+
+impl Token for Test {
+    fn translate(&self) -> Option<String> {
+        let tr_arg1 = self.args[0].translate().unwrap_or("".into());
+        let tr_arg2 = self.args[1].translate().unwrap_or("".into());
+        let tr_comp = self.comp.translate().unwrap_or("".into());
+        let tr_fail = self.fail.translate().unwrap_or("".into());
+        Some(format!("\nif {} {} {} fail then goto {}", tr_arg1, tr_comp, tr_arg2, tr_fail))
+    }
+}
+
+comptoken!{IsGe, "is_ge", ">="}
+comptoken!{IsEqExact, "is_eq_exact", "=="}
 
 emptyinstr!(Line, "line");
 emptyinstr!(FuncInfo, "func_info");
