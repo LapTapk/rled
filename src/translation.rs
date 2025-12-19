@@ -44,39 +44,32 @@ macro_rules! emptyinstr {
     };
 }
 
+macro_rules! _parse_next_token {
+     ($term:expr, $atom:expr, $($token:ty),*) => {
+         {
+            let lexeme = atomutf8_to_string($atom)?;
+            let token_res = match lexeme.as_str() {
+                $(
+                    <$token as TokenMeta>::LEXEME => <$token as TokenMeta>::parse,
+                )*
+                _ => <Unresolved as TokenMeta>::parse
+            }($term);
+
+            match token_res {
+                Ok(token) => token,
+                _ => <Unresolved as TokenMeta>::parse($term).unwrap()
+            }
+        }
+     }
+}
+
 macro_rules! parse_next_token {
     ($term:expr => $($token:ty)|*) => {
         {
             match $term {
-                OtpErlangTerm::OtpErlangTuple(tuple) => {
-                    let lexem = atomutf8_to_string(&tuple[0])?;
-                    let token_res = match lexem.as_str() {
-                        $(
-                            <$token as TokenMeta>::LEXEME => <$token as TokenMeta>::parse,
-                        )*
-                        _ => <Unresolved as TokenMeta>::parse
-                    }($term);
-
-                    match token_res {
-                        Ok(token) => token,
-                        _ => <Unresolved as TokenMeta>::parse($term).unwrap()
-                    }
-                },
-                OtpErlangTerm::OtpErlangAtomUTF8(_) => {
-                    let lexem = atomutf8_to_string($term)?;
-                    let token_res = match lexem.as_str() {
-                        $(
-                            <$token as TokenMeta>::LEXEME => <$token as TokenMeta>::parse,
-                        )*
-                        _ => <Unresolved as TokenMeta>::parse
-                    }($term);
-
-                    match token_res {
-                        Ok(token) => token,
-                        _ => <Unresolved as TokenMeta>::parse($term).unwrap()
-                    }
-                }
-                _ => return Err("Cannot find any matching token productions")
+                OtpErlangTerm::OtpErlangTuple(tuple) => _parse_next_token!($term, &tuple[0], $($token),*),
+                OtpErlangTerm::OtpErlangAtomUTF8(_) => _parse_next_token!($term, $term, $($token),*),
+                _ => return Err("Cannot find any matching token productions"),
             }
         }
     };
@@ -94,7 +87,7 @@ macro_rules! comptoken {
 
         impl Token for $name {
             fn translate(&self) -> Option<String> {
-                Some($tr.into())       
+                Some($tr.into())
             }
         }
     }
@@ -182,7 +175,7 @@ impl TokenMeta for Func {
                 CallExtLast |
                 CallExtOnly |
                 TestHeap |
-                PutList | 
+                PutList |
                 Test
             );
             instrs.push(parsed_instr);
@@ -785,12 +778,15 @@ impl Token for Test {
         let tr_arg2 = self.args[1].translate().unwrap_or("".into());
         let tr_comp = self.comp.translate().unwrap_or("".into());
         let tr_fail = self.fail.translate().unwrap_or("".into());
-        Some(format!("\nif {} {} {} fail then goto {}", tr_arg1, tr_comp, tr_arg2, tr_fail))
+        Some(format!(
+            "\nif {} {} {} fail then goto {}",
+            tr_arg1, tr_comp, tr_arg2, tr_fail
+        ))
     }
 }
 
-comptoken!{IsGe, "is_ge", ">="}
-comptoken!{IsEqExact, "is_eq_exact", "=="}
+comptoken! {IsGe, "is_ge", ">="}
+comptoken! {IsEqExact, "is_eq_exact", "=="}
 
 emptyinstr!(Line, "line");
 emptyinstr!(FuncInfo, "func_info");
