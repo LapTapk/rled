@@ -17,7 +17,7 @@ fn main() -> ExitCode {
         }
     };
 
-    std::fs::remove_dir_all("rled.tmp").expect("failed to remove directory");
+    std::fs::remove_dir_all("rled.tmp");
     std::fs::create_dir("rled.tmp").expect("failed to create directory");
     let status = match Command::new("./erl/beam_disasm.escript")
         .arg(&path)
