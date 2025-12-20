@@ -6,4 +6,3 @@ edition = "2024"
 [dependencies]
 downcast-rs = "2.0.2"
 erlang_rs = { git = "https://github.com/LapTapk/erlang_rs" }
-once_cell = "1.21.3"
