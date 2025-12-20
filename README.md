@@ -1,15 +1,12 @@
 # Little Erlang Decompiler written in Rust
 This project is aimed to enhance my programming skills in general.
-# Version 0.1
-On this stage rled is:
-* like BEAM pretty printer
-* with extremely incomplete BEAM instruction set
-* architecture which allow adding tokens with ease
-* it is not designed to perfectly decompile any instructions present in translation module (it may crash on some BEAMs)
-
-Version 0.2 can be:
-* like BEAM pretty printer
-* with more complete, growing instruction set because of formed architecture
+# Developing version 1.0
+The development of this version will focus on:
+- expanding the architecture to allow for more flexible manipulation of the syntax tree
+- some algorithms that will use this architecture, such as:
+    - combining X0 = "str" and func(X0) into func("str")
+    - more readable branching
+    - and other algorithms that come to mind
 # Example
 BEAM code
 ```
@@ -28,7 +25,7 @@ BEAM code
 {move,{literal,":(\n"},{x,0}},
 {call_ext_last,1,{extfunc,io,format,1},3}
 ```
-Pseudo code 
+v0 pseudo code 
 ```
 X0 = "FLAG"
 X0 = getenv(X0)
@@ -44,4 +41,13 @@ label8:
 X0 = ":(\n"
 return io:format(X0)
 ```
+v1 pseudo code
+```
+Y0 = getenv("FLAG")
+Y1 = length(Y2)
 
+if y1 >= 2:
+    return io:format("~s", [Y0])
+else: 
+    return io:format(":(\n")
+```
