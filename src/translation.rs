@@ -151,10 +151,7 @@ impl TokenMeta for Module {
             funcs.push(parsed_func);
         }
 
-        let module = Module {
-            name: name,
-            funcs: funcs,
-        };
+        let module = Module { name, funcs };
         Ok(Box::new(module))
     }
 }
@@ -219,10 +216,10 @@ impl TokenMeta for Func {
         }
 
         let token = Func {
-            name: name,
-            arity: arity,
-            label: label,
-            instrs: instrs,
+            name,
+            arity,
+            label,
+            instrs,
         };
         Ok(Box::new(token))
     }
@@ -351,10 +348,7 @@ impl TokenMeta for Move {
 
         let rvalue = parse_next_token!(&move_tuple[1] => XReg | YReg | Literal | Integer | Atom);
         let lvalue = parse_next_token!(&move_tuple[2] => XReg | YReg);
-        let move_token = Move {
-            rvalue: rvalue,
-            lvalue: lvalue,
-        };
+        let move_token = Move { rvalue, lvalue };
 
         Ok(Box::new(move_token))
     }
@@ -388,7 +382,7 @@ impl TokenMeta for CallExt {
 
         let call_ext = CallExt {
             arity: *arity,
-            func: func,
+            func,
         };
 
         Ok(Box::new(call_ext))
@@ -422,8 +416,8 @@ impl TokenMeta for ExtFunc {
         };
 
         let ext_func = ExtFunc {
-            module: module,
-            name: name,
+            module,
+            name,
             arity: *arity,
         };
 
@@ -501,11 +495,11 @@ impl TokenMeta for GcBif {
         let store = parse_next_token!(&gcbif_tuple[5] => XReg | YReg);
 
         let gcbif = GcBif {
-            name: name,
-            fallback: fallback,
+            name,
+            fallback,
             arity: *arity,
-            args: args,
-            store: store,
+            args,
+            store,
         };
 
         Ok(Box::new(gcbif))
@@ -571,7 +565,7 @@ impl TokenMeta for CallExtLast {
 
         let call_ext = CallExtLast {
             arity: *arity,
-            func: func,
+            func,
         };
 
         Ok(Box::new(call_ext))
@@ -607,7 +601,7 @@ impl TokenMeta for CallExtOnly {
 
         let call_ext = CallExt {
             arity: *arity,
-            func: func,
+            func,
         };
 
         Ok(Box::new(call_ext))
@@ -669,9 +663,9 @@ impl TokenMeta for PutList {
         let store = parse_next_token!(&putlist_tuple[3] => YReg | XReg);
 
         let put_list = PutList {
-            head: head,
-            tail: tail,
-            store: store,
+            head,
+            tail,
+            store,
             tail_is_nil,
         };
 
