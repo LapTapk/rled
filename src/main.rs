@@ -1,5 +1,3 @@
-#![allow(unused)]
-
 mod translation;
 mod util;
 
