@@ -14,9 +14,7 @@ pub fn translate(term: &OtpErlangTerm) -> String {
         return ERROR.into();
     };
 
-    module
-        .translate()
-        .unwrap_or(ERROR.into())
+    module.translate().unwrap_or(ERROR.into())
 }
 
 type Parsed = Result<Box<dyn Token>, &'static str>;
@@ -40,7 +38,7 @@ macro_rules! extrtuple {
 }
 
 macro_rules! emptyinstr {
-    ($type:ident, $name:literal) => {
+    {$type:ident, $name:literal} => {
         struct $type;
         impl TokenMeta for $type {
             const LEXEME: &'static str = $name;
@@ -825,8 +823,8 @@ impl Token for Test {
 comptoken! {IsGe, "is_ge", ">="}
 comptoken! {IsEqExact, "is_eq_exact", "=="}
 
-emptyinstr!(Line, "line");
-emptyinstr!(FuncInfo, "func_info");
-emptyinstr!(Allocate, "allocate");
-emptyinstr!(InitYRegs, "init_yregs");
-emptyinstr!(TestHeap, "test_heap");
+emptyinstr! {Line, "line"}
+emptyinstr! {FuncInfo, "func_info" }
+emptyinstr! {Allocate, "allocate"}
+emptyinstr! {InitYRegs, "init_yregs"}
+emptyinstr! {TestHeap, "test_heap"}
