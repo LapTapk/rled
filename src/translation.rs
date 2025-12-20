@@ -62,7 +62,7 @@ macro_rules! _parse_next_token {
                 )*
                 _ => {
                     let log = format!("0:{}:{}:{}:{:?}:{:?};", file!(), line!(), lexeme, $term, [$(type_name::<$token>(),)*]);
-                    writeln!(
+                    let _ = writeln!(
                         OpenOptions::new()
                             .create(true)
                             .append(true)
@@ -79,7 +79,7 @@ macro_rules! _parse_next_token {
                 Ok(token) => token,
                 Err(s) => {
                     let log = format!("1:{}:{}:{}:{:?}:{};", file!(), line!(), lexeme, $term,  s);
-                    writeln!(
+                    let _ = writeln!(
                         OpenOptions::new()
                             .create(true)
                             .append(true)
@@ -103,7 +103,7 @@ macro_rules! parse_next_token {
                 OtpErlangTerm::OtpErlangAtomUTF8(_) => _parse_next_token!($term, $term, $($token),*),
                 _ => {
                     let log = format!("2:{}:{}:{:?}", file!(), line!(), $term);
-                    writeln!(
+                    let _ = writeln!(
                         OpenOptions::new()
                             .create(true)
                             .append(true)
