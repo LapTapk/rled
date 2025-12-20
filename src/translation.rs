@@ -39,8 +39,7 @@ macro_rules! emptyinstr {
         struct $type;
         impl TokenCtor for $type {
             const LEXEME: &'static str = $name;
-            fn parse(term: &OtpErlangTerm) -> Parsed {
-                extrtuple!(tuple, term);
+            fn parse(_: &OtpErlangTerm) -> Parsed {
                 Ok(Box::new($type {}))
             }
         }
@@ -113,7 +112,7 @@ macro_rules! comptoken {
         struct $name;
         impl TokenCtor for $name {
             const LEXEME: &'static str = $lexeme;
-            fn parse(term: &OtpErlangTerm) -> Parsed {
+            fn parse(_: &OtpErlangTerm) -> Parsed {
                 Ok(Box::new($name {}))
             }
         }
@@ -673,7 +672,7 @@ impl Token for PutList {
     fn translate(&self) -> Option<String> {
         let head_tr = self.head.translate().unwrap_or("".into());
         let store_tr = self.store.translate().unwrap_or("".into());
-        if (self.tail_is_nil) {
+        if self.tail_is_nil {
             Some(format!("{} = [{}]", store_tr, head_tr))
         } else {
             let tail_tr = self.tail.translate().unwrap_or("".into());
@@ -686,7 +685,7 @@ struct Nil;
 
 impl TokenCtor for Nil {
     const LEXEME: &'static str = "nil";
-    fn parse(term: &OtpErlangTerm) -> Parsed {
+    fn parse(_: &OtpErlangTerm) -> Parsed {
         Ok(Box::new(Nil {}))
     }
 }
