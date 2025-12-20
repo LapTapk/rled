@@ -1,10 +1,7 @@
 use crate::util::atomutf8_to_string;
 use downcast_rs::{Downcast, impl_downcast};
 use erlang::OtpErlangTerm;
-use once_cell::sync::Lazy;
 use std::any::type_name;
-use std::collections::HashMap;
-use std::collections::LinkedList;
 use std::fs::OpenOptions;
 use std::io::Write;
 
