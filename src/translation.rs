@@ -40,7 +40,7 @@ macro_rules! extrtuple {
 
 macro_rules! emptyinstr {
     ($type:ident, $name:literal) => {
-        struct $type {}
+        struct $type;
         impl TokenMeta for $type {
             const LEXEME: &'static str = $name;
             fn parse(term: &OtpErlangTerm) -> Parsed {
@@ -686,7 +686,7 @@ impl Token for PutList {
     }
 }
 
-struct Nil {}
+struct Nil;
 
 impl TokenMeta for Nil {
     const LEXEME: &'static str = "nil";
