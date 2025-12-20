@@ -9,13 +9,14 @@ use std::fs::OpenOptions;
 use std::io::Write;
 
 pub fn translate(term: &OtpErlangTerm) -> String {
+    const ERROR: &str = "Failed to translate BEAM file";
     let Ok(module) = <Module as TokenMeta>::parse(term) else {
-        return "Failed to translate BEAM file".into();
+        return ERROR.into();
     };
 
     module
         .translate()
-        .unwrap_or("Failed to translate BEAM file".into())
+        .unwrap_or(ERROR.into())
 }
 
 type Parsed = Result<Box<dyn Token>, &'static str>;
