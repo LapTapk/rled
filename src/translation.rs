@@ -101,7 +101,19 @@ macro_rules! parse_next_token {
             match $term {
                 OtpErlangTerm::OtpErlangTuple(tuple) => _parse_next_token!($term, &tuple[0], $($token),*),
                 OtpErlangTerm::OtpErlangAtomUTF8(_) => _parse_next_token!($term, $term, $($token),*),
-                _ => return Err("Cannot find any matching token productions"),
+                _ => {
+                    let log = format!("2:{}:{}:{:?}", file!(), line!(), $term);
+                    writeln!(
+                        OpenOptions::new()
+                            .create(true)
+                            .append(true)
+                            .open("rled.tmp/rled.log")
+                            .unwrap(),
+                        "{}",
+                        log
+                    );
+                    <Unresolved as TokenCtor>::parse($term).unwrap()
+                }
             }
         }
     };
