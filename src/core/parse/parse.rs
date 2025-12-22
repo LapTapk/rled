@@ -4,38 +4,41 @@ use crate::core::parse::util::atomutf8_to_string;
 use erlang::OtpErlangTerm;
 
 pub fn dump(term: &OtpErlangTerm) -> String {
-     Module::parse(term).dump()
+    Module::parse(term).dump()
 }
 
-trait Token {
+trait TokenCtor {
     const LEXEME: &'static str;
-    fn parse(term: &OtpErlangTerm) -> Tokens;
+    fn parse(term: &OtpErlangTerm) -> Token;
     fn dump(&self) -> String;
 }
 
 pub struct Unparsed {
     term: OtpErlangTerm,
-    reason: String
+    reason: String,
 }
 
 impl Unparsed {
-    fn token(term: &OtpErlangTerm, reason: &str) -> Tokens {
+    fn token(term: &OtpErlangTerm, reason: &str) -> Token {
         log::warn!("Unresolved: {} : {:?}", reason, term);
-        Tokens::Unparsed(Unparsed {
+        Token::Unparsed(Unparsed {
             term: term.clone(),
-            reason: reason.into()
+            reason: reason.into(),
         })
     }
 }
 
-impl Token for Unparsed {
+impl TokenCtor for Unparsed {
     const LEXEME: &'static str = "";
-    fn parse(term: &OtpErlangTerm) -> Tokens {
+    fn parse(term: &OtpErlangTerm) -> Token {
         Unparsed::token(term, "Token unregistered")
     }
 
     fn dump(&self) -> String {
-        let tr = format!("{:?}\n^^^^^^^^^^^^^^^^^^^^^^^^^\n{}\n\n", self.term, self.reason);
+        let tr = format!(
+            "{:?}\n^^^^^^^^^^^^^^^^^^^^^^^^^\n{}\n\n",
+            self.term, self.reason
+        );
         tr
     }
 }
@@ -51,7 +54,40 @@ macro_rules! try_parse {
     };
 }
 
-type ParseFn = fn(&OtpErlangTerm) -> Tokens;
+macro_rules! info_token {
+    {$type:ident, $lexeme:literal} => {
+        pub struct $type;
+        impl TokenCtor for $type {
+            const LEXEME: &'static str = $lexeme;
+            fn parse(_: &OtpErlangTerm) -> Token {
+                Token::$type($type{})
+            }
+
+            fn dump(&self) -> String {
+                format!("# {}", $lexeme)
+            }
+        }
+    };
+}
+
+macro_rules! lexeme_as_token {
+    {$type:ident, $lexeme:literal} => {
+        pub struct $type;
+        impl TokenCtor for $type {
+            const LEXEME: &'static str = $lexeme;
+            fn parse(_: &OtpErlangTerm) -> Token {
+                Token::$type($type{})
+            }
+
+            fn dump(&self) -> String {
+                $lexeme.into()
+            }
+        }
+    };
+
+}
+
+type ParseFn = fn(&OtpErlangTerm) -> Token;
 
 macro_rules! tokens {
     (
@@ -59,20 +95,20 @@ macro_rules! tokens {
             $token:ident
         ),* $(,)?
     ) => {
-        pub enum Tokens {
+        pub enum Token {
             $(
                 $token($token),
             )*
             Unparsed(Unparsed),
         }
 
-        impl Tokens {
+        impl Token {
             fn dump(&self) -> String {
                 match self {
                 $(
-                    Tokens::$token(t) => t.dump(),
+                    Token::$token(t) => t.dump(),
                 )*
-                    Tokens::Unparsed(u) => u.dump()
+                    Token::Unparsed(u) => u.dump()
                 }
             }
         }
@@ -109,7 +145,13 @@ tokens!(
     TInteger,
     Tr,
     Test,
-    Line
+    Line,
+    FuncInfo,
+    Allocate,
+    TestHeap,
+    InitYRegs,
+    IsGe,
+    IsEqExact
 );
 
 pub fn get_lexeme(term: &OtpErlangTerm) -> Result<String, LexemeError> {
@@ -134,31 +176,31 @@ pub fn get_lexeme(term: &OtpErlangTerm) -> Result<String, LexemeError> {
     })
 }
 
-pub fn parse(term: &OtpErlangTerm) -> Tokens {
+pub fn parse(term: &OtpErlangTerm) -> Token {
     let lexeme = try_parse!(term, get_lexeme(term));
     dispatch(lexeme.as_str())(term)
 }
 
 pub struct Module {
     name: String,
-    funcs: Vec<Tokens>,
+    funcs: Vec<Token>,
 }
 
-impl Token for Module {
+impl TokenCtor for Module {
     const LEXEME: &'static str = "beam_file";
-    fn parse(term: &OtpErlangTerm) -> Tokens {
+    fn parse(term: &OtpErlangTerm) -> Token {
         let module = try_parse!(term, expect_tuple(term, 6));
         let name = try_parse!(term, atomutf8_to_string(&module[1]));
         let funcs_beam = try_parse!(term, expect_list(&module[5]));
 
-        let mut funcs: Vec<Tokens> = Vec::with_capacity(funcs_beam.len());
+        let mut funcs: Vec<Token> = Vec::with_capacity(funcs_beam.len());
         for func_beam in funcs_beam {
             let parsed_func = parse(func_beam);
             funcs.push(parsed_func);
         }
 
         let module = Module { name, funcs };
-        Tokens::Module(module)
+        Token::Module(module)
     }
 
     fn dump(&self) -> String {
@@ -175,19 +217,19 @@ pub struct Func {
     name: String,
     arity: i32,
     label: i32,
-    instrs: Vec<Tokens>,
+    instrs: Vec<Token>,
 }
 
-impl Token for Func {
+impl TokenCtor for Func {
     const LEXEME: &'static str = "function";
-    fn parse(term: &OtpErlangTerm) -> Tokens {
+    fn parse(term: &OtpErlangTerm) -> Token {
         let func_tuple = try_parse!(term, expect_tuple(term, 5));
         let name = try_parse!(term, atomutf8_to_string(&func_tuple[1]));
         let arity = try_parse!(term, expect_integer(&func_tuple[2]));
         let label = try_parse!(term, expect_integer(&func_tuple[3]));
         let instrs_list = try_parse!(term, expect_list(&func_tuple[4]));
 
-        let mut instrs: Vec<Tokens> = Vec::with_capacity(instrs_list.len());
+        let mut instrs: Vec<Token> = Vec::with_capacity(instrs_list.len());
         for instr_term in instrs_list {
             let parsed_instr = parse(instr_term);
             instrs.push(parsed_instr);
@@ -199,7 +241,7 @@ impl Token for Func {
             label,
             instrs,
         };
-        Tokens::Func(func)
+        Token::Func(func)
     }
 
     fn dump(&self) -> String {
@@ -222,9 +264,9 @@ pub struct Label {
     num: i32,
 }
 
-impl Token for Label {
+impl TokenCtor for Label {
     const LEXEME: &'static str = "label";
-    fn parse(term: &OtpErlangTerm) -> Tokens {
+    fn parse(term: &OtpErlangTerm) -> Token {
         let label_tuple = try_parse!(term, expect_tuple(term, 2));
 
         let OtpErlangTerm::OtpErlangInteger(num) = &label_tuple[1] else {
@@ -232,7 +274,7 @@ impl Token for Label {
         };
 
         let label = Label { num: *num };
-        Tokens::Label(label)
+        Token::Label(label)
     }
 
     fn dump(&self) -> String {
@@ -244,14 +286,14 @@ pub struct XReg {
     num: i32,
 }
 
-impl Token for XReg {
+impl TokenCtor for XReg {
     const LEXEME: &'static str = "x";
-    fn parse(term: &OtpErlangTerm) -> Tokens {
+    fn parse(term: &OtpErlangTerm) -> Token {
         let xreg_tuple = try_parse!(term, expect_tuple(term, 2));
         let num = try_parse!(term, expect_integer(&xreg_tuple[1]));
 
         let xreg = XReg { num };
-        Tokens::XReg(xreg)
+        Token::XReg(xreg)
     }
 
     fn dump(&self) -> String {
@@ -263,14 +305,14 @@ pub struct YReg {
     num: i32,
 }
 
-impl Token for YReg {
+impl TokenCtor for YReg {
     const LEXEME: &'static str = "y";
-    fn parse(term: &OtpErlangTerm) -> Tokens {
+    fn parse(term: &OtpErlangTerm) -> Token {
         let yreg_tuple = try_parse!(term, expect_tuple(term, 2));
         let num = try_parse!(term, expect_integer(&yreg_tuple[1]));
 
         let yreg = YReg { num };
-        Tokens::YReg(yreg)
+        Token::YReg(yreg)
     }
 
     fn dump(&self) -> String {
@@ -279,20 +321,20 @@ impl Token for YReg {
 }
 
 pub struct Move {
-    lvalue: Box<Tokens>,
-    rvalue: Box<Tokens>,
+    lvalue: Box<Token>,
+    rvalue: Box<Token>,
 }
 
-impl Token for Move {
+impl TokenCtor for Move {
     const LEXEME: &'static str = "move";
-    fn parse(term: &OtpErlangTerm) -> Tokens {
+    fn parse(term: &OtpErlangTerm) -> Token {
         let move_tuple = try_parse!(term, expect_tuple(term, 3));
 
         let rvalue = Box::new(parse(&move_tuple[1]));
         let lvalue = Box::new(parse(&move_tuple[2]));
         let move_token = Move { rvalue, lvalue };
 
-        Tokens::Move(move_token)
+        Token::Move(move_token)
     }
 
     fn dump(&self) -> String {
@@ -304,19 +346,19 @@ impl Token for Move {
 
 pub struct CallExt {
     arity: i32,
-    func: Box<Tokens>,
+    func: Box<Token>,
 }
 
-impl Token for CallExt {
+impl TokenCtor for CallExt {
     const LEXEME: &'static str = "call_ext";
-    fn parse(term: &OtpErlangTerm) -> Tokens {
+    fn parse(term: &OtpErlangTerm) -> Token {
         let callext_tuple = try_parse!(term, expect_tuple(term, 3));
         let arity = try_parse!(term, expect_integer(&callext_tuple[1]));
         let func = Box::new(parse(&callext_tuple[2]));
 
         let call_ext = CallExt { arity, func };
 
-        Tokens::CallExt(call_ext)
+        Token::CallExt(call_ext)
     }
 
     fn dump(&self) -> String {
@@ -330,9 +372,9 @@ pub struct ExtFunc {
     arity: i32,
 }
 
-impl Token for ExtFunc {
+impl TokenCtor for ExtFunc {
     const LEXEME: &'static str = "extfunc";
-    fn parse(term: &OtpErlangTerm) -> Tokens {
+    fn parse(term: &OtpErlangTerm) -> Token {
         let extfunc_tuple = try_parse!(term, expect_tuple(term, 4));
 
         let module = try_parse!(term, atomutf8_to_string(&extfunc_tuple[1]));
@@ -346,7 +388,7 @@ impl Token for ExtFunc {
             arity,
         };
 
-        Tokens::ExtFunc(ext_func)
+        Token::ExtFunc(ext_func)
     }
 
     fn dump(&self) -> String {
@@ -363,14 +405,14 @@ pub struct FLabel {
     num: i32,
 }
 
-impl Token for FLabel {
+impl TokenCtor for FLabel {
     const LEXEME: &'static str = "f";
-    fn parse(term: &OtpErlangTerm) -> Tokens {
+    fn parse(term: &OtpErlangTerm) -> Token {
         let flabel_tuple = try_parse!(term, expect_tuple(term, 2));
         let num = try_parse!(term, expect_integer(&flabel_tuple[1]));
 
         let flabel = FLabel { num };
-        Tokens::FLabel(flabel)
+        Token::FLabel(flabel)
     }
 
     fn dump(&self) -> String {
@@ -380,15 +422,15 @@ impl Token for FLabel {
 
 pub struct GcBif {
     name: String,
-    fallback: Box<Tokens>,
+    fallback: Box<Token>,
     arity: i32,
-    args: Vec<Tokens>,
-    store: Box<Tokens>,
+    args: Vec<Token>,
+    store: Box<Token>,
 }
 
-impl Token for GcBif {
+impl TokenCtor for GcBif {
     const LEXEME: &'static str = "gc_bif";
-    fn parse(term: &OtpErlangTerm) -> Tokens {
+    fn parse(term: &OtpErlangTerm) -> Token {
         let gcbif_tuple = try_parse!(term, expect_tuple(term, 6));
         let name = try_parse!(term, atomutf8_to_string(&gcbif_tuple[1]));
 
@@ -398,7 +440,7 @@ impl Token for GcBif {
 
         let args_terms = try_parse!(term, expect_list(&gcbif_tuple[4]));
 
-        let mut args: Vec<Tokens> = Vec::with_capacity(args_terms.len());
+        let mut args: Vec<Token> = Vec::with_capacity(args_terms.len());
         for arg_term in args_terms {
             let token = parse(arg_term);
             args.push(token);
@@ -414,7 +456,7 @@ impl Token for GcBif {
             store,
         };
 
-        Tokens::GcBif(gcbif)
+        Token::GcBif(gcbif)
     }
 
     fn dump(&self) -> String {
@@ -434,14 +476,14 @@ pub struct Literal {
     s: String,
 }
 
-impl Token for Literal {
+impl TokenCtor for Literal {
     const LEXEME: &'static str = "literal";
-    fn parse(term: &OtpErlangTerm) -> Tokens {
+    fn parse(term: &OtpErlangTerm) -> Token {
         let literal_tuple = try_parse!(term, expect_tuple(term, 2));
         let s = try_parse!(term, expect_string(&literal_tuple[1]));
 
         let literal = Literal { s };
-        Tokens::Literal(literal)
+        Token::Literal(literal)
     }
 
     fn dump(&self) -> String {
@@ -451,19 +493,19 @@ impl Token for Literal {
 
 pub struct CallExtLast {
     arity: i32,
-    func: Box<Tokens>,
+    func: Box<Token>,
 }
 
-impl Token for CallExtLast {
+impl TokenCtor for CallExtLast {
     const LEXEME: &'static str = "call_ext_last";
-    fn parse(term: &OtpErlangTerm) -> Tokens {
+    fn parse(term: &OtpErlangTerm) -> Token {
         let callext_tuple = try_parse!(term, expect_tuple(term, 4));
         let arity = try_parse!(term, expect_integer(&callext_tuple[1]));
         let func = Box::new(parse(&callext_tuple[2]));
 
         let call_ext_last = CallExtLast { arity, func };
 
-        Tokens::CallExtLast(call_ext_last)
+        Token::CallExtLast(call_ext_last)
     }
 
     fn dump(&self) -> String {
@@ -473,12 +515,12 @@ impl Token for CallExtLast {
 
 pub struct CallExtOnly {
     arity: i32,
-    func: Box<Tokens>,
+    func: Box<Token>,
 }
 
-impl Token for CallExtOnly {
+impl TokenCtor for CallExtOnly {
     const LEXEME: &'static str = "call_ext_only";
-    fn parse(term: &OtpErlangTerm) -> Tokens {
+    fn parse(term: &OtpErlangTerm) -> Token {
         let callext_tuple = try_parse!(term, expect_tuple(term, 3));
 
         let arity = try_parse!(term, expect_integer(&callext_tuple[1]));
@@ -486,7 +528,7 @@ impl Token for CallExtOnly {
 
         let call_ext_only = CallExtOnly { arity, func };
 
-        Tokens::CallExtOnly(call_ext_only)
+        Token::CallExtOnly(call_ext_only)
     }
 
     fn dump(&self) -> String {
@@ -498,13 +540,13 @@ pub struct Integer {
     num: i32,
 }
 
-impl Token for Integer {
+impl TokenCtor for Integer {
     const LEXEME: &'static str = "integer";
-    fn parse(term: &OtpErlangTerm) -> Tokens {
+    fn parse(term: &OtpErlangTerm) -> Token {
         let int_tuple = try_parse!(term, expect_tuple(term, 2));
         let num = try_parse!(term, expect_integer(&int_tuple[1]));
         let integer = Integer { num };
-        Tokens::Integer(integer)
+        Token::Integer(integer)
     }
 
     fn dump(&self) -> String {
@@ -513,14 +555,14 @@ impl Token for Integer {
 }
 
 pub struct PutList {
-    head: Box<Tokens>,
-    tail: Box<Tokens>,
-    store: Box<Tokens>,
+    head: Box<Token>,
+    tail: Box<Token>,
+    store: Box<Token>,
 }
 
-impl Token for PutList {
+impl TokenCtor for PutList {
     const LEXEME: &'static str = "put_list";
-    fn parse(term: &OtpErlangTerm) -> Tokens {
+    fn parse(term: &OtpErlangTerm) -> Token {
         let putlist_tuple = try_parse!(term, expect_tuple(term, 4));
         let head = Box::new(parse(&putlist_tuple[1]));
         let tail = Box::new(parse(&putlist_tuple[2]));
@@ -529,13 +571,13 @@ impl Token for PutList {
 
         let put_list = PutList { head, tail, store };
 
-        Tokens::PutList(put_list)
+        Token::PutList(put_list)
     }
 
     fn dump(&self) -> String {
         let head_tr = self.head.dump();
         let store_tr = self.store.dump();
-        if let Tokens::Nil(_) = *self.tail {
+        if let Token::Nil(_) = *self.tail {
             format!("{} = [{}]", store_tr, head_tr)
         } else {
             let tail_tr = self.tail.dump();
@@ -546,10 +588,10 @@ impl Token for PutList {
 
 pub struct Nil;
 
-impl Token for Nil {
+impl TokenCtor for Nil {
     const LEXEME: &'static str = "nil";
-    fn parse(_: &OtpErlangTerm) -> Tokens {
-        Tokens::Nil(Nil {})
+    fn parse(_: &OtpErlangTerm) -> Token {
+        Token::Nil(Nil {})
     }
 
     fn dump(&self) -> String {
@@ -561,13 +603,13 @@ pub struct Atom {
     name: String,
 }
 
-impl Token for Atom {
+impl TokenCtor for Atom {
     const LEXEME: &'static str = "atom";
-    fn parse(term: &OtpErlangTerm) -> Tokens {
+    fn parse(term: &OtpErlangTerm) -> Token {
         let atom_tuple = try_parse!(term, expect_tuple(term, 2));
         let name = try_parse!(term, atomutf8_to_string(&atom_tuple[1]));
         let atom = Atom { name };
-        Tokens::Atom(atom)
+        Token::Atom(atom)
     }
 
     fn dump(&self) -> String {
@@ -580,15 +622,15 @@ pub struct TInteger {
     num2: i32,
 }
 
-impl Token for TInteger {
+impl TokenCtor for TInteger {
     const LEXEME: &'static str = "t_integer";
-    fn parse(term: &OtpErlangTerm) -> Tokens {
+    fn parse(term: &OtpErlangTerm) -> Token {
         let tint_tuple = try_parse!(term, expect_tuple(term, 2));
         let num_range = try_parse!(term, expect_tuple(&tint_tuple[1], 2));
         let num1 = try_parse!(term, expect_integer(&num_range[0]));
         let num2 = try_parse!(term, expect_integer(&num_range[1]));
         let tint = TInteger { num1, num2 };
-        Tokens::TInteger(tint)
+        Token::TInteger(tint)
     }
 
     fn dump(&self) -> String {
@@ -597,20 +639,20 @@ impl Token for TInteger {
 }
 
 pub struct Tr {
-    reg: Box<Tokens>,
-    ty: Box<Tokens>,
+    reg: Box<Token>,
+    ty: Box<Token>,
 }
 
-impl Token for Tr {
+impl TokenCtor for Tr {
     const LEXEME: &'static str = "tr";
-    fn parse(term: &OtpErlangTerm) -> Tokens {
+    fn parse(term: &OtpErlangTerm) -> Token {
         let tr_tuple = try_parse!(term, expect_tuple(term, 3));
 
         let reg = Box::new(parse(&tr_tuple[1]));
         let ty = Box::new(parse(&tr_tuple[2]));
 
         let tr = Tr { reg, ty };
-        Tokens::Tr(tr)
+        Token::Tr(tr)
     }
 
     fn dump(&self) -> String {
@@ -620,53 +662,66 @@ impl Token for Tr {
 }
 
 pub struct Test {
-    comp: Box<Tokens>,
-    fail: Box<Tokens>,
-    args: Vec<Tokens>,
+    comp: Box<Token>,
+    fail: Box<Token>,
+    args: Vec<Token>,
 }
 
-impl Token for Test {
+impl TokenCtor for Test {
     const LEXEME: &'static str = "test";
-    fn parse(term: &OtpErlangTerm) -> Tokens {
+    fn parse(term: &OtpErlangTerm) -> Token {
         let test_tuple = try_parse!(term, expect_tuple(term, 4));
 
         let comp = Box::new(parse(&test_tuple[1]));
         let fail = Box::new(parse(&test_tuple[2]));
         let args_terms = try_parse!(term, expect_list(&test_tuple[3]));
 
-        let mut args: Vec<Tokens> = Vec::with_capacity(args_terms.len());
+        let mut args: Vec<Token> = Vec::with_capacity(args_terms.len());
         for arg_term in args_terms {
             let parsed_arg = parse(arg_term);
             args.push(parsed_arg);
         }
 
         let test = Test { comp, fail, args };
-        Tokens::Test(test)
+        Token::Test(test)
     }
 
     fn dump(&self) -> String {
         let tr_comp = self.comp.dump();
         let tr_fail = self.fail.dump();
-        let tr_args = self.args.iter().map(|x| x.dump()).collect::<Vec<_>>().join(", ");
+        let tr_args = self
+            .args
+            .iter()
+            .map(|x| x.dump())
+            .collect::<Vec<_>>()
+            .join(", ");
         format!("\nif {}({}) fail then goto {}", tr_comp, tr_args, tr_fail)
     }
 }
 
 pub struct Line {
-    num: i32
+    num: i32,
 }
 
-impl Token for Line {
+impl TokenCtor for Line {
     const LEXEME: &'static str = "line";
-    fn parse(term: &OtpErlangTerm) -> Tokens {
+    fn parse(term: &OtpErlangTerm) -> Token {
         let tuple = try_parse!(term, expect_tuple(term, 2));
         let num = try_parse!(term, expect_integer(&tuple[1]));
 
         let line = Line { num };
-        Tokens::Line(line)
+        Token::Line(line)
     }
 
     fn dump(&self) -> String {
         format!("# line {}", self.num)
     }
 }
+
+lexeme_as_token! {IsGe, "is_ge" }
+lexeme_as_token! {IsEqExact, "is_eq_exact"}
+
+info_token! {FuncInfo, "func_info" }
+info_token! {Allocate, "allocate"}
+info_token! {InitYRegs, "init_yregs"}
+info_token! {TestHeap, "test_heap"}
