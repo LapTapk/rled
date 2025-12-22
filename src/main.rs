@@ -1,7 +1,6 @@
-mod translation;
-mod util;
+mod core;
 
-use crate::translation::translate;
+use crate::core::parse::parse::dump;
 use erlang::binary_to_term;
 use std::env;
 use std::process::{Command, ExitCode, Stdio};
@@ -31,9 +30,10 @@ fn main() -> ExitCode {
         }
     };
 
+    env_logger::init();
     let etf = std::fs::read("rled.tmp/etf").expect("Failed to read ETF file of BEAM");
     let term = binary_to_term(&etf).expect("Failed to parse ETF file of BEAM");
-    let result = translate(&term);
+    let result = dump(&term);
     println!("{}", result);
 
     ExitCode::from(status.code().unwrap_or(1) as u8)
