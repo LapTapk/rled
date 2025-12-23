@@ -7,31 +7,31 @@ pub fn dump(term: &OtpErlangTerm) -> String {
     Module::parse(term).dump()
 }
 
-trait TokenCtor {
+trait ParseTreeCtor {
     const LEXEME: &'static str;
-    fn parse(term: &OtpErlangTerm) -> Token;
+    fn parse(term: &OtpErlangTerm) -> ParseTree;
     fn dump(&self) -> String;
 }
 
 pub struct Unparsed {
-    term: OtpErlangTerm,
-    reason: String,
+    pub term: OtpErlangTerm,
+    pub reason: String,
 }
 
 impl Unparsed {
-    fn token(term: &OtpErlangTerm, reason: &str) -> Token {
+    fn token(term: &OtpErlangTerm, reason: &str) -> ParseTree {
         log::warn!("Unresolved: {} : {:?}", reason, term);
-        Token::Unparsed(Unparsed {
+        ParseTree::Unparsed(Unparsed {
             term: term.clone(),
             reason: reason.into(),
         })
     }
 }
 
-impl TokenCtor for Unparsed {
+impl ParseTreeCtor for Unparsed {
     const LEXEME: &'static str = "";
-    fn parse(term: &OtpErlangTerm) -> Token {
-        Unparsed::token(term, "Token unregistered")
+    fn parse(term: &OtpErlangTerm) -> ParseTree {
+        Unparsed::token(term, "ParseTree unregistered")
     }
 
     fn dump(&self) -> String {
@@ -57,10 +57,10 @@ macro_rules! try_parse {
 macro_rules! info_token {
     {$type:ident, $lexeme:literal} => {
         pub struct $type;
-        impl TokenCtor for $type {
+        impl ParseTreeCtor for $type {
             const LEXEME: &'static str = $lexeme;
-            fn parse(_: &OtpErlangTerm) -> Token {
-                Token::$type($type{})
+            fn parse(_: &OtpErlangTerm) -> ParseTree {
+                ParseTree::$type($type{})
             }
 
             fn dump(&self) -> String {
@@ -73,10 +73,10 @@ macro_rules! info_token {
 macro_rules! lexeme_as_token {
     {$type:ident, $lexeme:literal} => {
         pub struct $type;
-        impl TokenCtor for $type {
+        impl ParseTreeCtor for $type {
             const LEXEME: &'static str = $lexeme;
-            fn parse(_: &OtpErlangTerm) -> Token {
-                Token::$type($type{})
+            fn parse(_: &OtpErlangTerm) -> ParseTree {
+                ParseTree::$type($type{})
             }
 
             fn dump(&self) -> String {
@@ -87,28 +87,28 @@ macro_rules! lexeme_as_token {
 
 }
 
-type ParseFn = fn(&OtpErlangTerm) -> Token;
+type ParseFn = fn(&OtpErlangTerm) -> ParseTree;
 
-macro_rules! tokens {
+macro_rules! parse_tree {
     (
         $(
             $token:ident
         ),* $(,)?
     ) => {
-        pub enum Token {
+        pub enum ParseTree {
             $(
                 $token($token),
             )*
             Unparsed(Unparsed),
         }
 
-        impl Token {
+        impl ParseTree {
             fn dump(&self) -> String {
                 match self {
                 $(
-                    Token::$token(t) => t.dump(),
+                    ParseTree::$token(t) => t.dump(),
                 )*
-                    Token::Unparsed(u) => u.dump()
+                    ParseTree::Unparsed(u) => u.dump()
                 }
             }
         }
@@ -124,7 +124,7 @@ macro_rules! tokens {
     };
 }
 
-tokens!(
+parse_tree!(
     Module,
     Func,
     Label,
@@ -176,31 +176,31 @@ pub fn get_lexeme(term: &OtpErlangTerm) -> Result<String, LexemeError> {
     })
 }
 
-pub fn parse(term: &OtpErlangTerm) -> Token {
+pub fn parse(term: &OtpErlangTerm) -> ParseTree {
     let lexeme = try_parse!(term, get_lexeme(term));
     dispatch(lexeme.as_str())(term)
 }
 
 pub struct Module {
-    name: String,
-    funcs: Vec<Token>,
+    pub name: String,
+    pub funcs: Vec<ParseTree>,
 }
 
-impl TokenCtor for Module {
+impl ParseTreeCtor for Module {
     const LEXEME: &'static str = "beam_file";
-    fn parse(term: &OtpErlangTerm) -> Token {
+    fn parse(term: &OtpErlangTerm) -> ParseTree {
         let module = try_parse!(term, expect_tuple(term, 6));
         let name = try_parse!(term, atomutf8_to_string(&module[1]));
         let funcs_beam = try_parse!(term, expect_list(&module[5]));
 
-        let mut funcs: Vec<Token> = Vec::with_capacity(funcs_beam.len());
+        let mut funcs: Vec<ParseTree> = Vec::with_capacity(funcs_beam.len());
         for func_beam in funcs_beam {
             let parsed_func = parse(func_beam);
             funcs.push(parsed_func);
         }
 
         let module = Module { name, funcs };
-        Token::Module(module)
+        ParseTree::Module(module)
     }
 
     fn dump(&self) -> String {
@@ -214,22 +214,22 @@ impl TokenCtor for Module {
 }
 
 pub struct Func {
-    name: String,
-    arity: i32,
-    label: i32,
-    instrs: Vec<Token>,
+    pub name: String,
+    pub arity: i32,
+    pub label: i32,
+    pub instrs: Vec<ParseTree>,
 }
 
-impl TokenCtor for Func {
+impl ParseTreeCtor for Func {
     const LEXEME: &'static str = "function";
-    fn parse(term: &OtpErlangTerm) -> Token {
+    fn parse(term: &OtpErlangTerm) -> ParseTree {
         let func_tuple = try_parse!(term, expect_tuple(term, 5));
         let name = try_parse!(term, atomutf8_to_string(&func_tuple[1]));
         let arity = try_parse!(term, expect_integer(&func_tuple[2]));
         let label = try_parse!(term, expect_integer(&func_tuple[3]));
         let instrs_list = try_parse!(term, expect_list(&func_tuple[4]));
 
-        let mut instrs: Vec<Token> = Vec::with_capacity(instrs_list.len());
+        let mut instrs: Vec<ParseTree> = Vec::with_capacity(instrs_list.len());
         for instr_term in instrs_list {
             let parsed_instr = parse(instr_term);
             instrs.push(parsed_instr);
@@ -241,7 +241,7 @@ impl TokenCtor for Func {
             label,
             instrs,
         };
-        Token::Func(func)
+        ParseTree::Func(func)
     }
 
     fn dump(&self) -> String {
@@ -261,12 +261,12 @@ impl TokenCtor for Func {
 }
 
 pub struct Label {
-    num: i32,
+    pub num: i32,
 }
 
-impl TokenCtor for Label {
+impl ParseTreeCtor for Label {
     const LEXEME: &'static str = "label";
-    fn parse(term: &OtpErlangTerm) -> Token {
+    fn parse(term: &OtpErlangTerm) -> ParseTree {
         let label_tuple = try_parse!(term, expect_tuple(term, 2));
 
         let OtpErlangTerm::OtpErlangInteger(num) = &label_tuple[1] else {
@@ -274,7 +274,7 @@ impl TokenCtor for Label {
         };
 
         let label = Label { num: *num };
-        Token::Label(label)
+        ParseTree::Label(label)
     }
 
     fn dump(&self) -> String {
@@ -283,17 +283,17 @@ impl TokenCtor for Label {
 }
 
 pub struct XReg {
-    num: i32,
+    pub num: i32,
 }
 
-impl TokenCtor for XReg {
+impl ParseTreeCtor for XReg {
     const LEXEME: &'static str = "x";
-    fn parse(term: &OtpErlangTerm) -> Token {
+    fn parse(term: &OtpErlangTerm) -> ParseTree {
         let xreg_tuple = try_parse!(term, expect_tuple(term, 2));
         let num = try_parse!(term, expect_integer(&xreg_tuple[1]));
 
         let xreg = XReg { num };
-        Token::XReg(xreg)
+        ParseTree::XReg(xreg)
     }
 
     fn dump(&self) -> String {
@@ -302,17 +302,17 @@ impl TokenCtor for XReg {
 }
 
 pub struct YReg {
-    num: i32,
+    pub num: i32,
 }
 
-impl TokenCtor for YReg {
+impl ParseTreeCtor for YReg {
     const LEXEME: &'static str = "y";
-    fn parse(term: &OtpErlangTerm) -> Token {
+    fn parse(term: &OtpErlangTerm) -> ParseTree {
         let yreg_tuple = try_parse!(term, expect_tuple(term, 2));
         let num = try_parse!(term, expect_integer(&yreg_tuple[1]));
 
         let yreg = YReg { num };
-        Token::YReg(yreg)
+        ParseTree::YReg(yreg)
     }
 
     fn dump(&self) -> String {
@@ -321,20 +321,20 @@ impl TokenCtor for YReg {
 }
 
 pub struct Move {
-    lvalue: Box<Token>,
-    rvalue: Box<Token>,
+    pub lvalue: Box<ParseTree>,
+    pub rvalue: Box<ParseTree>,
 }
 
-impl TokenCtor for Move {
+impl ParseTreeCtor for Move {
     const LEXEME: &'static str = "move";
-    fn parse(term: &OtpErlangTerm) -> Token {
+    fn parse(term: &OtpErlangTerm) -> ParseTree {
         let move_tuple = try_parse!(term, expect_tuple(term, 3));
 
         let rvalue = Box::new(parse(&move_tuple[1]));
         let lvalue = Box::new(parse(&move_tuple[2]));
         let move_token = Move { rvalue, lvalue };
 
-        Token::Move(move_token)
+        ParseTree::Move(move_token)
     }
 
     fn dump(&self) -> String {
@@ -345,20 +345,20 @@ impl TokenCtor for Move {
 }
 
 pub struct CallExt {
-    arity: i32,
-    func: Box<Token>,
+    pub arity: i32,
+    pub func: Box<ParseTree>,
 }
 
-impl TokenCtor for CallExt {
+impl ParseTreeCtor for CallExt {
     const LEXEME: &'static str = "call_ext";
-    fn parse(term: &OtpErlangTerm) -> Token {
+    fn parse(term: &OtpErlangTerm) -> ParseTree {
         let callext_tuple = try_parse!(term, expect_tuple(term, 3));
         let arity = try_parse!(term, expect_integer(&callext_tuple[1]));
         let func = Box::new(parse(&callext_tuple[2]));
 
         let call_ext = CallExt { arity, func };
 
-        Token::CallExt(call_ext)
+        ParseTree::CallExt(call_ext)
     }
 
     fn dump(&self) -> String {
@@ -367,14 +367,14 @@ impl TokenCtor for CallExt {
 }
 
 pub struct ExtFunc {
-    module: String,
-    name: String,
-    arity: i32,
+    pub module: String,
+    pub name: String,
+    pub arity: i32,
 }
 
-impl TokenCtor for ExtFunc {
+impl ParseTreeCtor for ExtFunc {
     const LEXEME: &'static str = "extfunc";
-    fn parse(term: &OtpErlangTerm) -> Token {
+    fn parse(term: &OtpErlangTerm) -> ParseTree {
         let extfunc_tuple = try_parse!(term, expect_tuple(term, 4));
 
         let module = try_parse!(term, atomutf8_to_string(&extfunc_tuple[1]));
@@ -388,7 +388,7 @@ impl TokenCtor for ExtFunc {
             arity,
         };
 
-        Token::ExtFunc(ext_func)
+        ParseTree::ExtFunc(ext_func)
     }
 
     fn dump(&self) -> String {
@@ -402,17 +402,17 @@ impl TokenCtor for ExtFunc {
 }
 
 pub struct FLabel {
-    num: i32,
+    pub num: i32,
 }
 
-impl TokenCtor for FLabel {
+impl ParseTreeCtor for FLabel {
     const LEXEME: &'static str = "f";
-    fn parse(term: &OtpErlangTerm) -> Token {
+    fn parse(term: &OtpErlangTerm) -> ParseTree {
         let flabel_tuple = try_parse!(term, expect_tuple(term, 2));
         let num = try_parse!(term, expect_integer(&flabel_tuple[1]));
 
         let flabel = FLabel { num };
-        Token::FLabel(flabel)
+        ParseTree::FLabel(flabel)
     }
 
     fn dump(&self) -> String {
@@ -421,16 +421,16 @@ impl TokenCtor for FLabel {
 }
 
 pub struct GcBif {
-    name: String,
-    fallback: Box<Token>,
-    arity: i32,
-    args: Vec<Token>,
-    store: Box<Token>,
+    pub name: String,
+    pub fallback: Box<ParseTree>,
+    pub arity: i32,
+    pub args: Vec<ParseTree>,
+    pub store: Box<ParseTree>,
 }
 
-impl TokenCtor for GcBif {
+impl ParseTreeCtor for GcBif {
     const LEXEME: &'static str = "gc_bif";
-    fn parse(term: &OtpErlangTerm) -> Token {
+    fn parse(term: &OtpErlangTerm) -> ParseTree {
         let gcbif_tuple = try_parse!(term, expect_tuple(term, 6));
         let name = try_parse!(term, atomutf8_to_string(&gcbif_tuple[1]));
 
@@ -440,7 +440,7 @@ impl TokenCtor for GcBif {
 
         let args_terms = try_parse!(term, expect_list(&gcbif_tuple[4]));
 
-        let mut args: Vec<Token> = Vec::with_capacity(args_terms.len());
+        let mut args: Vec<ParseTree> = Vec::with_capacity(args_terms.len());
         for arg_term in args_terms {
             let token = parse(arg_term);
             args.push(token);
@@ -456,7 +456,7 @@ impl TokenCtor for GcBif {
             store,
         };
 
-        Token::GcBif(gcbif)
+        ParseTree::GcBif(gcbif)
     }
 
     fn dump(&self) -> String {
@@ -473,17 +473,17 @@ impl TokenCtor for GcBif {
 }
 
 pub struct Literal {
-    s: String,
+    pub s: String,
 }
 
-impl TokenCtor for Literal {
+impl ParseTreeCtor for Literal {
     const LEXEME: &'static str = "literal";
-    fn parse(term: &OtpErlangTerm) -> Token {
+    fn parse(term: &OtpErlangTerm) -> ParseTree {
         let literal_tuple = try_parse!(term, expect_tuple(term, 2));
         let s = try_parse!(term, expect_string(&literal_tuple[1]));
 
         let literal = Literal { s };
-        Token::Literal(literal)
+        ParseTree::Literal(literal)
     }
 
     fn dump(&self) -> String {
@@ -492,20 +492,20 @@ impl TokenCtor for Literal {
 }
 
 pub struct CallExtLast {
-    arity: i32,
-    func: Box<Token>,
+    pub arity: i32,
+    pub func: Box<ParseTree>,
 }
 
-impl TokenCtor for CallExtLast {
+impl ParseTreeCtor for CallExtLast {
     const LEXEME: &'static str = "call_ext_last";
-    fn parse(term: &OtpErlangTerm) -> Token {
+    fn parse(term: &OtpErlangTerm) -> ParseTree {
         let callext_tuple = try_parse!(term, expect_tuple(term, 4));
         let arity = try_parse!(term, expect_integer(&callext_tuple[1]));
         let func = Box::new(parse(&callext_tuple[2]));
 
         let call_ext_last = CallExtLast { arity, func };
 
-        Token::CallExtLast(call_ext_last)
+        ParseTree::CallExtLast(call_ext_last)
     }
 
     fn dump(&self) -> String {
@@ -514,13 +514,13 @@ impl TokenCtor for CallExtLast {
 }
 
 pub struct CallExtOnly {
-    arity: i32,
-    func: Box<Token>,
+    pub arity: i32,
+    pub func: Box<ParseTree>,
 }
 
-impl TokenCtor for CallExtOnly {
+impl ParseTreeCtor for CallExtOnly {
     const LEXEME: &'static str = "call_ext_only";
-    fn parse(term: &OtpErlangTerm) -> Token {
+    fn parse(term: &OtpErlangTerm) -> ParseTree {
         let callext_tuple = try_parse!(term, expect_tuple(term, 3));
 
         let arity = try_parse!(term, expect_integer(&callext_tuple[1]));
@@ -528,7 +528,7 @@ impl TokenCtor for CallExtOnly {
 
         let call_ext_only = CallExtOnly { arity, func };
 
-        Token::CallExtOnly(call_ext_only)
+        ParseTree::CallExtOnly(call_ext_only)
     }
 
     fn dump(&self) -> String {
@@ -537,16 +537,16 @@ impl TokenCtor for CallExtOnly {
 }
 
 pub struct Integer {
-    num: i32,
+    pub num: i32,
 }
 
-impl TokenCtor for Integer {
+impl ParseTreeCtor for Integer {
     const LEXEME: &'static str = "integer";
-    fn parse(term: &OtpErlangTerm) -> Token {
+    fn parse(term: &OtpErlangTerm) -> ParseTree {
         let int_tuple = try_parse!(term, expect_tuple(term, 2));
         let num = try_parse!(term, expect_integer(&int_tuple[1]));
         let integer = Integer { num };
-        Token::Integer(integer)
+        ParseTree::Integer(integer)
     }
 
     fn dump(&self) -> String {
@@ -555,14 +555,14 @@ impl TokenCtor for Integer {
 }
 
 pub struct PutList {
-    head: Box<Token>,
-    tail: Box<Token>,
-    store: Box<Token>,
+    pub head: Box<ParseTree>,
+    pub tail: Box<ParseTree>,
+    pub store: Box<ParseTree>,
 }
 
-impl TokenCtor for PutList {
+impl ParseTreeCtor for PutList {
     const LEXEME: &'static str = "put_list";
-    fn parse(term: &OtpErlangTerm) -> Token {
+    fn parse(term: &OtpErlangTerm) -> ParseTree {
         let putlist_tuple = try_parse!(term, expect_tuple(term, 4));
         let head = Box::new(parse(&putlist_tuple[1]));
         let tail = Box::new(parse(&putlist_tuple[2]));
@@ -571,13 +571,13 @@ impl TokenCtor for PutList {
 
         let put_list = PutList { head, tail, store };
 
-        Token::PutList(put_list)
+        ParseTree::PutList(put_list)
     }
 
     fn dump(&self) -> String {
         let head_tr = self.head.dump();
         let store_tr = self.store.dump();
-        if let Token::Nil(_) = *self.tail {
+        if let ParseTree::Nil(_) = *self.tail {
             format!("{} = [{}]", store_tr, head_tr)
         } else {
             let tail_tr = self.tail.dump();
@@ -588,10 +588,10 @@ impl TokenCtor for PutList {
 
 pub struct Nil;
 
-impl TokenCtor for Nil {
+impl ParseTreeCtor for Nil {
     const LEXEME: &'static str = "nil";
-    fn parse(_: &OtpErlangTerm) -> Token {
-        Token::Nil(Nil {})
+    fn parse(_: &OtpErlangTerm) -> ParseTree {
+        ParseTree::Nil(Nil {})
     }
 
     fn dump(&self) -> String {
@@ -600,16 +600,16 @@ impl TokenCtor for Nil {
 }
 
 pub struct Atom {
-    name: String,
+    pub name: String,
 }
 
-impl TokenCtor for Atom {
+impl ParseTreeCtor for Atom {
     const LEXEME: &'static str = "atom";
-    fn parse(term: &OtpErlangTerm) -> Token {
+    fn parse(term: &OtpErlangTerm) -> ParseTree {
         let atom_tuple = try_parse!(term, expect_tuple(term, 2));
         let name = try_parse!(term, atomutf8_to_string(&atom_tuple[1]));
         let atom = Atom { name };
-        Token::Atom(atom)
+        ParseTree::Atom(atom)
     }
 
     fn dump(&self) -> String {
@@ -618,19 +618,19 @@ impl TokenCtor for Atom {
 }
 
 pub struct TInteger {
-    num1: i32,
-    num2: i32,
+    pub num1: i32,
+    pub num2: i32,
 }
 
-impl TokenCtor for TInteger {
+impl ParseTreeCtor for TInteger {
     const LEXEME: &'static str = "t_integer";
-    fn parse(term: &OtpErlangTerm) -> Token {
+    fn parse(term: &OtpErlangTerm) -> ParseTree {
         let tint_tuple = try_parse!(term, expect_tuple(term, 2));
         let num_range = try_parse!(term, expect_tuple(&tint_tuple[1], 2));
         let num1 = try_parse!(term, expect_integer(&num_range[0]));
         let num2 = try_parse!(term, expect_integer(&num_range[1]));
         let tint = TInteger { num1, num2 };
-        Token::TInteger(tint)
+        ParseTree::TInteger(tint)
     }
 
     fn dump(&self) -> String {
@@ -639,20 +639,20 @@ impl TokenCtor for TInteger {
 }
 
 pub struct Tr {
-    reg: Box<Token>,
-    ty: Box<Token>,
+    pub reg: Box<ParseTree>,
+    pub ty: Box<ParseTree>,
 }
 
-impl TokenCtor for Tr {
+impl ParseTreeCtor for Tr {
     const LEXEME: &'static str = "tr";
-    fn parse(term: &OtpErlangTerm) -> Token {
+    fn parse(term: &OtpErlangTerm) -> ParseTree {
         let tr_tuple = try_parse!(term, expect_tuple(term, 3));
 
         let reg = Box::new(parse(&tr_tuple[1]));
         let ty = Box::new(parse(&tr_tuple[2]));
 
         let tr = Tr { reg, ty };
-        Token::Tr(tr)
+        ParseTree::Tr(tr)
     }
 
     fn dump(&self) -> String {
@@ -662,28 +662,28 @@ impl TokenCtor for Tr {
 }
 
 pub struct Test {
-    comp: Box<Token>,
-    fail: Box<Token>,
-    args: Vec<Token>,
+    pub comp: Box<ParseTree>,
+    pub fail: Box<ParseTree>,
+    pub args: Vec<ParseTree>,
 }
 
-impl TokenCtor for Test {
+impl ParseTreeCtor for Test {
     const LEXEME: &'static str = "test";
-    fn parse(term: &OtpErlangTerm) -> Token {
+    fn parse(term: &OtpErlangTerm) -> ParseTree {
         let test_tuple = try_parse!(term, expect_tuple(term, 4));
 
         let comp = Box::new(parse(&test_tuple[1]));
         let fail = Box::new(parse(&test_tuple[2]));
         let args_terms = try_parse!(term, expect_list(&test_tuple[3]));
 
-        let mut args: Vec<Token> = Vec::with_capacity(args_terms.len());
+        let mut args: Vec<ParseTree> = Vec::with_capacity(args_terms.len());
         for arg_term in args_terms {
             let parsed_arg = parse(arg_term);
             args.push(parsed_arg);
         }
 
         let test = Test { comp, fail, args };
-        Token::Test(test)
+        ParseTree::Test(test)
     }
 
     fn dump(&self) -> String {
@@ -700,17 +700,17 @@ impl TokenCtor for Test {
 }
 
 pub struct Line {
-    num: i32,
+    pub num: i32,
 }
 
-impl TokenCtor for Line {
+impl ParseTreeCtor for Line {
     const LEXEME: &'static str = "line";
-    fn parse(term: &OtpErlangTerm) -> Token {
+    fn parse(term: &OtpErlangTerm) -> ParseTree {
         let tuple = try_parse!(term, expect_tuple(term, 2));
         let num = try_parse!(term, expect_integer(&tuple[1]));
 
         let line = Line { num };
-        Token::Line(line)
+        ParseTree::Line(line)
     }
 
     fn dump(&self) -> String {
