@@ -1,6 +1,8 @@
 mod core;
 
-use crate::core::parse::parse::dump;
+use crate::core::syntax::{SyntaxNode, SyntaxTree};
+use crate::core::control::cfg;
+use crate::core::parse::ParseTree;
 use erlang::binary_to_term;
 use std::env;
 use std::process::{Command, ExitCode, Stdio};
@@ -33,7 +35,15 @@ fn main() -> ExitCode {
     env_logger::init();
     let etf = std::fs::read("rled.tmp/etf").expect("Failed to read ETF file of BEAM");
     let term = binary_to_term(&etf).expect("Failed to parse ETF file of BEAM");
-    let result = dump(&term);
+    let parsed = <SyntaxNode as ParseTree>::parse(&term);
+    let SyntaxNode::Module(module) = parsed else {
+        panic!("{:?}", parsed)
+    };
+    let SyntaxNode::Func(func) = &module.funcs[0] else {
+        panic!("{:?}", module)
+    };
+    let cfged = cfg(func.instrs.clone());
+    let result = cfged.dump();
     println!("{}", result);
 
     ExitCode::from(status.code().unwrap_or(1) as u8)
