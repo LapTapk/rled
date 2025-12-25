@@ -165,11 +165,12 @@ fn cfg_parents(blocks: &mut Vec<BBlock>) {
             if blocks[v].parent_distance == 0 {
                 if blocks[v].control_instr.is_none() {
                     blocks[v].parent_distance = d;
+                    bfs_deque.push_front(v);
                 } else {
                     blocks[v].parent_distance = d + 1;
+                    bfs_deque.push_back(v);
                 }
 
-                bfs_deque.push_back(v);
             }
         }
     }
