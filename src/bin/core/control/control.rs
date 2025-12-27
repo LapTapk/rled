@@ -71,6 +71,47 @@ impl BBlock {
     }
 }
 
+impl Default for BBlock {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+fn push_block(blocks: &mut Vec<BBlock>, cur_block: &mut BBlock) {
+    let old = std::mem::take(cur_block);
+    blocks.push(old);
+}
+
+fn attach_or_enqueue_label(
+    cur_block_idx: usize,
+    label_num: i32,
+    labels_blocks: &HashMap<i32, usize>,
+    labels_to_branches: &mut HashMap<i32, Vec<usize>>,
+    children: &mut Vec<usize>,
+) {
+    if let Some(&idx) = labels_blocks.get(&label_num) {
+        children.push(idx);
+    } else {
+        labels_to_branches
+            .entry(label_num)
+            .or_default()
+            .push(cur_block_idx);
+    }
+}
+
+fn link_pending_branches(
+    label_num: i32,
+    labels_to_branches: &HashMap<i32, Vec<usize>>,
+    blocks: &mut [BBlock],
+    labeled_block_idx: usize,
+) {
+    if let Some(block_idxes) = labels_to_branches.get(&label_num) {
+        for &idx in block_idxes {
+            blocks[idx].children.push(labeled_block_idx);
+        }
+    }
+}
+
 fn cfg_build(instrs: Vec<SyntaxNode>) -> Vec<BBlock> {
     let mut blocks: Vec<BBlock> = Vec::new();
     let mut cur_block = BBlock::new();
@@ -90,36 +131,31 @@ fn cfg_build(instrs: Vec<SyntaxNode>) -> Vec<BBlock> {
             Branch::Label(label_num) => {
                 let labeled_block_idx = blocks.len() + 1;
 
-                if let Some(block_idxes) = labels_to_branches.get(&label_num) {
-                    for &idx in block_idxes {
-                        blocks[idx].children.push(labeled_block_idx);
-                    }
-                }
+                link_pending_branches(
+                    label_num,
+                    &labels_to_branches,
+                    &mut blocks,
+                    labeled_block_idx,
+                );
                 labels_blocks.insert(label_num, labeled_block_idx);
                 cur_block.children.push(labeled_block_idx);
-                blocks.push(cur_block);
-                cur_block = BBlock::new();
+                push_block(&mut blocks, &mut cur_block);
             }
             Branch::Branch(ctor, labels_nums) => {
                 cur_block.ctrl = Some(ctor);
                 let cur_block_idx = blocks.len();
 
                 for &label_num in &labels_nums {
-                    if let Some(&idx) = labels_blocks.get(&label_num) {
-                        cur_block.children.push(idx);
-                    } else {
-                        if let None = labels_to_branches.get(&label_num) {
-                            labels_to_branches.insert(label_num, Vec::new());
-                        }
-                        labels_to_branches
-                            .get_mut(&label_num)
-                            .unwrap()
-                            .push(cur_block_idx);
-                    }
+                    attach_or_enqueue_label(
+                        cur_block_idx,
+                        label_num,
+                        &labels_blocks,
+                        &mut labels_to_branches,
+                        &mut cur_block.children,
+                    );
                 }
 
-                blocks.push(cur_block);
-                cur_block = BBlock::new();
+                push_block(&mut blocks, &mut cur_block);
             }
             Branch::Fallthrough(ctor, labels_nums) => {
                 cur_block.ctrl = Some(ctor);
@@ -128,34 +164,28 @@ fn cfg_build(instrs: Vec<SyntaxNode>) -> Vec<BBlock> {
                 cur_block.children.push(cur_block_idx + 1);
 
                 for &label_num in &labels_nums {
-                    if let Some(&idx) = labels_blocks.get(&label_num) {
-                        cur_block.children.push(idx);
-                    } else {
-                        if let None = labels_to_branches.get(&label_num) {
-                            labels_to_branches.insert(label_num, Vec::new());
-                        }
-                        labels_to_branches
-                            .get_mut(&label_num)
-                            .unwrap()
-                            .push(cur_block_idx);
-                    }
+                    attach_or_enqueue_label(
+                        cur_block_idx,
+                        label_num,
+                        &labels_blocks,
+                        &mut labels_to_branches,
+                        &mut cur_block.children,
+                    );
                 }
 
-                blocks.push(cur_block);
-                cur_block = BBlock::new();
+                push_block(&mut blocks, &mut cur_block);
             }
             Branch::Next => {
                 cur_block.instrs.push(instr);
             }
             Branch::Stop => {
                 cur_block.instrs.push(instr);
-                blocks.push(cur_block);
-                cur_block = BBlock::new();
+                push_block(&mut blocks, &mut cur_block);
             }
         }
     }
     if !cur_block.instrs.is_empty() {
-        blocks.push(cur_block);
+        push_block(&mut blocks, &mut cur_block);
     }
 
     blocks
@@ -182,7 +212,10 @@ fn _cfg_analysis(
                 remains,
                 parents_stack: saved_parents_stack,
             } => {
-                println!("{}: Comparing {:?} and {:?}", idx, parents_stack, saved_parents_stack);
+                println!(
+                    "{}: Comparing {:?} and {:?}",
+                    idx, parents_stack, saved_parents_stack
+                );
                 let last_common_fork_idx = parents_stack
                     .iter()
                     .zip(saved_parents_stack.iter())
@@ -299,7 +332,6 @@ fn _cfg_to_st(blocks: &mut Vec<BBlock>, visited: &mut Vec<bool>, idx: usize) -> 
         succ_node = Some(_cfg_to_st(blocks, visited, succ));
         visited[succ] = true;
     }
-
 
     let ctrl_option = &mut blocks[idx].ctrl.take();
     if let Some(ctrl) = ctrl_option {
