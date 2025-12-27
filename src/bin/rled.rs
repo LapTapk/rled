@@ -1,8 +1,8 @@
 mod core;
 
-use crate::core::syntax::{SyntaxNode, SyntaxTree};
 use crate::core::control::cfg;
 use crate::core::parse::ParseTree;
+use crate::core::syntax::{SyntaxNode, SyntaxTree};
 use erlang::binary_to_term;
 use std::env;
 use std::process::{Command, ExitCode, Stdio};
@@ -42,6 +42,7 @@ fn main() -> ExitCode {
     let SyntaxNode::Func(func) = &module.funcs[0] else {
         panic!("{:?}", module)
     };
+    //println!("{}", func.dump());
     let cfged = cfg(func.instrs.clone());
     let result = cfged.dump();
     println!("{}", result);

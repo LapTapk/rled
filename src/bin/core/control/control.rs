@@ -1,5 +1,5 @@
 use crate::core::syntax::*;
-use std::collections::{HashMap, VecDeque};
+use std::collections::HashMap;
 
 enum Branch {
     Next,
@@ -32,30 +32,46 @@ construct_helpers!(Test, Label, CallExtLast);
 
 trait ControlNodeCtor {
     fn add_child(&mut self, instr: SyntaxNode);
-    fn add_children(&mut self, instrs: Vec<SyntaxNode>);
     fn next_branch(&mut self);
     fn node(&self) -> SyntaxNode;
 }
 
+#[derive(Debug)]
+enum Merge {
+    NotVisited {
+        parent_cnt: i32,
+    },
+    Merging {
+        remains: i32,
+        parents_stack: Vec<usize>,
+    },
+    Final {
+        label_num: i32,
+    },
+}
+
 struct BBlock {
-    parent_distance: i32,
     instrs: Vec<SyntaxNode>,
     children: Vec<usize>,
-    control_instr: Option<Box<dyn ControlNodeCtor>>,
+
+    successor: Option<usize>,
+    ctrl: Option<Box<dyn ControlNodeCtor>>,
+    merge: Option<Merge>,
 }
 
 impl BBlock {
     fn new() -> BBlock {
         BBlock {
-            parent_distance: 0,
+            merge: None,
+            successor: None,
             instrs: Vec::new(),
             children: Vec::new(),
-            control_instr: None,
+            ctrl: None,
         }
     }
 }
 
-fn cfg_no_parent(instrs: Vec<SyntaxNode>) -> Vec<BBlock> {
+fn cfg_build(instrs: Vec<SyntaxNode>) -> Vec<BBlock> {
     let mut blocks: Vec<BBlock> = Vec::new();
     let mut cur_block = BBlock::new();
     let mut labels_to_branches: HashMap<i32, Vec<usize>> = HashMap::new();
@@ -85,7 +101,7 @@ fn cfg_no_parent(instrs: Vec<SyntaxNode>) -> Vec<BBlock> {
                 cur_block = BBlock::new();
             }
             Branch::Branch(ctor, labels_nums) => {
-                cur_block.control_instr = Some(ctor);
+                cur_block.ctrl = Some(ctor);
                 let cur_block_idx = blocks.len();
 
                 for &label_num in &labels_nums {
@@ -106,7 +122,7 @@ fn cfg_no_parent(instrs: Vec<SyntaxNode>) -> Vec<BBlock> {
                 cur_block = BBlock::new();
             }
             Branch::Fallthrough(ctor, labels_nums) => {
-                cur_block.control_instr = Some(ctor);
+                cur_block.ctrl = Some(ctor);
 
                 let cur_block_idx = blocks.len();
                 cur_block.children.push(cur_block_idx + 1);
@@ -145,124 +161,186 @@ fn cfg_no_parent(instrs: Vec<SyntaxNode>) -> Vec<BBlock> {
     blocks
 }
 
-fn cfg_parents(blocks: &mut Vec<BBlock>) {
-    if blocks.len() <= 1 {
-        return;
-    }
+fn _cfg_analysis(
+    blocks: &mut Vec<BBlock>,
+    visited: &mut Vec<bool>,
+    parents: &mut Vec<usize>,
+    parents_stack: &mut Vec<usize>,
+    idx: usize,
+    last_label_num: &mut i32,
+) {
+    let mut merge_option = blocks[idx].merge.take();
+    if let Some(merge) = &mut merge_option {
+        match merge {
+            Merge::NotVisited { parent_cnt } => {
+                *merge = Merge::Merging {
+                    remains: *parent_cnt - 1,
+                    parents_stack: parents_stack.clone(),
+                }
+            }
+            Merge::Merging {
+                remains,
+                parents_stack: saved_parents_stack,
+            } => {
+                println!("{}: Comparing {:?} and {:?}", idx, parents_stack, saved_parents_stack);
+                let last_common_fork_idx = parents_stack
+                    .iter()
+                    .zip(saved_parents_stack.iter())
+                    .take_while(|(x, y)| x == y)
+                    .count();
 
-    let mut bfs_deque: VecDeque<usize> = VecDeque::new();
-    bfs_deque.extend(&blocks[0].children);
+                saved_parents_stack.truncate(last_common_fork_idx);
+                *remains -= 1;
 
-    bfs_deque.push_back(0);
-
-    while let Some(u) = bfs_deque.pop_front() {
-        let d = blocks[u].parent_distance;
-        let children_len = blocks[u].children.len();
-
-        for i in 0..children_len {
-            let v = blocks[u].children[i];
-
-            if blocks[v].parent_distance == 0 {
-                if blocks[v].control_instr.is_none() {
-                    blocks[v].parent_distance = d;
-                    bfs_deque.push_front(v);
-                } else {
-                    blocks[v].parent_distance = d + 1;
-                    bfs_deque.push_back(v);
+                if *remains == 0 {
+                    let last_common_fork = saved_parents_stack[last_common_fork_idx - 1];
+                    blocks[last_common_fork].successor = Some(idx);
+                    *merge = Merge::Final {
+                        label_num: *last_label_num,
+                    };
+                    *last_label_num += 1
                 }
 
+                blocks[idx].merge = merge_option;
+                return;
+            }
+            Merge::Final { label_num: _ } => {
+                panic!("Entering a merged node");
             }
         }
     }
+
+    blocks[idx].merge = merge_option;
+
+    if visited[idx] {
+        return;
+    }
+
+    visited[idx] = true;
+
+    parents.push(idx);
+    parents_stack.push(parents.len() - 1);
+
+    let children_len = blocks[idx].children.len();
+    for c_idx in 0..children_len {
+        let c = blocks[idx].children[c_idx];
+        _cfg_analysis(blocks, visited, parents, parents_stack, c, last_label_num);
+    }
+
+    parents_stack.pop();
 }
 
-fn _cfg_to_st(
-    blocks: &mut Vec<BBlock>,
-    visited: &mut Vec<bool>,
-    block_idx: usize,
-    parent_stack: &mut Vec<usize>,
-    parent_arena: &mut Vec<Box<dyn ControlNodeCtor>>,
-) {
-    let (parent_distance, instrs, control_option, children) = {
-        let block = &mut blocks[block_idx];
+fn cfg_merges(blocks: &mut Vec<BBlock>) {
+    let mut parent_cnt = vec![0; blocks.len()];
 
-        let parent_distance = block.parent_distance;
-        let instrs = std::mem::take(&mut block.instrs);
-        let children = std::mem::take(&mut block.children);
-        let control_option = block.control_instr.take();
-
-        (parent_distance, instrs, control_option, children)
-    };
-    visited[block_idx] = true;
-
-    parent_stack.truncate(1 + parent_distance as usize);
-
-    let Some(&parent_control_idx) = parent_stack.last() else {
-        panic!("parent_stack became empty");
-    };
-
-    parent_arena[parent_control_idx].add_children(instrs);
-
-    let Some(control) = control_option else {
-        if children.is_empty() {
-            return;
+    for i in 0..blocks.len() {
+        for c in 0..blocks[i].children.len() {
+            parent_cnt[blocks[i].children[c]] += 1;
         }
-        let next = children[0];
-        if visited[next] {
-            return;
-        }
+    }
 
-        _cfg_to_st(blocks, visited, next, parent_stack, parent_arena);
-        return;
-    };
-
-    parent_arena.push(control);
-    let control_idx = parent_arena.len() - 1;
-    parent_stack.push(control_idx);
-
-    for i in children {
-        if visited[i] {
+    for i in 0..blocks.len() {
+        if parent_cnt[i] < 2 {
             continue;
         }
 
-        _cfg_to_st(blocks, visited, i, parent_stack, parent_arena);
-        parent_arena[control_idx].next_branch();
+        blocks[i].merge = Some(Merge::NotVisited {
+            parent_cnt: parent_cnt[i],
+        })
     }
-
-    let parent_stack_len = parent_stack.len();
-    if parent_stack_len >= parent_distance as usize {
-        parent_stack.truncate(1 + parent_distance as usize);
-    }
-
-    let node = parent_arena[control_idx].node();
-    parent_arena[parent_control_idx].add_child(node);
 }
 
-fn cfg_to_st(mut blocks: Vec<BBlock>) -> SyntaxNode {
+fn cfg_analysis(blocks: &mut Vec<BBlock>) {
+    cfg_merges(blocks);
+
+    let mut visited = vec![false; blocks.len()];
+    let mut parents: Vec<usize> = Vec::new();
+    let mut parents_stack: Vec<usize> = Vec::new();
+    let mut last_label_num = 0;
+
+    _cfg_analysis(
+        blocks,
+        &mut visited,
+        &mut parents,
+        &mut parents_stack,
+        0,
+        &mut last_label_num,
+    );
+}
+
+fn _cfg_to_st(blocks: &mut Vec<BBlock>, visited: &mut Vec<bool>, idx: usize) -> SyntaxNode {
+    if visited[idx] {
+        let label = match blocks[idx]
+            .merge
+            .as_ref()
+            .expect("Entering a node which has no merge info second time")
+        {
+            Merge::Final { label_num } => label_num,
+            _ => panic!("Entering a merging node which did not finalized"),
+        };
+        return SyntaxNode::Goto(Goto { num: *label });
+    }
+
+    visited[idx] = true;
+
+    let mut instrs: Vec<SyntaxNode> = Vec::new();
+    if let Some(merge) = &blocks[idx].merge {
+        match merge {
+            Merge::Final { label_num } => instrs.push(SyntaxNode::Label(Label { num: *label_num })),
+            _ => panic!("Entering a merging node which did not finalized"),
+        }
+    };
+
+    instrs.extend(std::mem::take(&mut blocks[idx].instrs));
+
+    let succ_option = blocks[idx].successor;
+    let mut succ_node: Option<SyntaxNode> = None;
+    if let Some(succ) = succ_option {
+        succ_node = Some(_cfg_to_st(blocks, visited, succ));
+        visited[succ] = true;
+    }
+
+
+    let ctrl_option = &mut blocks[idx].ctrl.take();
+    if let Some(ctrl) = ctrl_option {
+        let children_len = blocks[idx].children.len();
+        for i in 0..children_len {
+            let subnode = _cfg_to_st(blocks, visited, blocks[idx].children[i]);
+            ctrl.add_child(subnode);
+            ctrl.next_branch();
+        }
+        instrs.push(ctrl.node());
+    } else {
+        let children_len = blocks[idx].children.len();
+        if children_len > 1 {
+            panic!("Entering a node with no control instruction but with multiple children")
+        }
+        if children_len != 0 {
+            let node = _cfg_to_st(blocks, visited, blocks[idx].children[0]);
+            instrs.push(node);
+        }
+    }
+
+    if let Some(node) = succ_node {
+        instrs.push(node);
+    }
+
+    SyntaxNode::InstrSeq(InstrSeq { instrs })
+}
+
+fn cfg_to_st(blocks: &mut Vec<BBlock>) -> SyntaxNode {
     if blocks.len() == 0 {
         return SyntaxNode::InstrSeq(InstrSeq { instrs: Vec::new() });
     }
 
     let mut visited = vec![false; blocks.len()];
-    let mut parent_stack = vec![0 as usize];
-    let mut parent_arena: Vec<Box<dyn ControlNodeCtor>> =
-        vec![Box::new(InstrSeq { instrs: Vec::new() })];
-
-    _cfg_to_st(
-        &mut blocks,
-        &mut visited,
-        0,
-        &mut parent_stack,
-        &mut parent_arena,
-    );
-
-    parent_arena[0].node()
+    _cfg_to_st(blocks, &mut visited, 0)
 }
 
 pub fn cfg(instrs: Vec<SyntaxNode>) -> SyntaxNode {
-    let mut blocks = cfg_no_parent(instrs);
-    cfg_parents(&mut blocks);
-    cfg_to_st(blocks)
+    let mut blocks = cfg_build(instrs);
+    cfg_analysis(&mut blocks);
+    cfg_to_st(&mut blocks)
 }
 
 impl PreControlNode for Label {
@@ -276,7 +354,6 @@ impl PreControlNode for CallExtLast {
         Ok(Branch::Stop)
     }
 }
-
 
 impl PreControlNode for Test {
     fn translate(&self) -> Result<Branch, &'static str> {
@@ -303,10 +380,6 @@ impl ControlNodeCtor for InstrSeq {
         self.instrs.push(instr);
     }
 
-    fn add_children(&mut self, instrs: Vec<SyntaxNode>) {
-        self.instrs.extend(instrs);
-    }
-
     fn next_branch(&mut self) {}
 
     fn node(&self) -> SyntaxNode {
@@ -325,14 +398,6 @@ impl ControlNodeCtor for IfCtor {
             self.i.t.instrs.push(instr);
         } else {
             self.i.f.instrs.push(instr);
-        }
-    }
-
-    fn add_children(&mut self, instrs: Vec<SyntaxNode>) {
-        if self.branch_idx == 0 {
-            self.i.t.instrs.extend(instrs);
-        } else {
-            self.i.f.instrs.extend(instrs);
         }
     }
 

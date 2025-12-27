@@ -79,7 +79,8 @@ construct_syntax_node!(
     IsGe,
     IsEqExact,
     If,
-    InstrSeq
+    InstrSeq,
+    Goto
 );
 
 #[derive(Clone, Debug)]
@@ -405,8 +406,8 @@ pub struct If {
 
 impl SyntaxTree for If {
     fn dump(&self) -> String {
-        let t = self.t.dump();
-        let f = self.f.dump();
+        let t = String::from("    ") + self.t.dump().as_str().replace("\n", "\n    ").as_str();
+        let f = String::from("    ") + self.f.dump().as_str().replace("\n", "\n    ").as_str();
         let comp = self.comp.dump();
         let args = self
             .args
@@ -427,11 +428,20 @@ impl SyntaxTree for InstrSeq {
     fn dump(&self) -> String {
         let mut result: Vec<String> = Vec::with_capacity(self.instrs.len());
         for instr in &self.instrs {
-            result.push(
-                String::from("    ") + instr.dump().as_str().replace("\n", "\n    ").as_str(),
-            );
+            result.push(instr.dump());
         }
         result.join("\n")
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct Goto {
+    pub num: i32,
+}
+
+impl SyntaxTree for Goto {
+    fn dump(&self) -> String {
+        format!("goto {}", self.num)
     }
 }
 
