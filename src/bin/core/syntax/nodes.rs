@@ -1,17 +1,6 @@
 use erlang::OtpErlangTerm;
 
-macro_rules! info_node {
-    {$type:ident, $s:literal} => {
-        #[derive(Clone, Debug)]
-        pub struct $type;
-
-        impl $type {
-            pub const LEXEME: &'static str = $s;
-        }
-    };
-}
-
-macro_rules! node_as_lexeme {
+macro_rules! lexeme_node {
     {$type:ident, $s:literal} => {
         #[derive(Clone, Debug)]
         pub struct $type;
@@ -228,11 +217,11 @@ pub struct Goto {
     pub num: i32,
 }
 
-node_as_lexeme! {Nil, "nil"}
-node_as_lexeme! {IsGe, "is_ge"}
-node_as_lexeme! {IsEqExact, "is_eq_exact"}
+lexeme_node! {Nil, "nil"}
+lexeme_node! {IsGe, "is_ge"}
+lexeme_node! {IsEqExact, "is_eq_exact"}
 
-info_node! {TestHeap, "test_heap"}
-info_node! {InitYRegs, "init_yregs"}
-info_node! {Allocate, "allocate"}
-info_node! {FuncInfo, "func_info"}
+lexeme_node! {TestHeap, "test_heap"}
+lexeme_node! {InitYRegs, "init_yregs"}
+lexeme_node! {Allocate, "allocate"}
+lexeme_node! {FuncInfo, "func_info"}
