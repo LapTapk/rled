@@ -1,5 +1,6 @@
 use crate::core::syntax::*;
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
+use std::fmt;
 
 enum Branch {
     Next,
@@ -45,9 +46,7 @@ enum Merge {
         remains: i32,
         parents_stack: Vec<usize>,
     },
-    Final {
-        label_num: i32,
-    },
+    Final,
 }
 
 struct BBlock {
@@ -57,6 +56,20 @@ struct BBlock {
     successor: Option<usize>,
     ctrl: Option<Box<dyn ControlNodeCtor>>,
     merge: Option<Merge>,
+    label: Option<i32>,
+}
+
+impl fmt::Debug for BBlock {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("BBlock")
+            .field("instrs", &self.instrs)
+            .field("children", &self.children)
+            .field("successor", &self.successor)
+            .field("merge", &self.merge)
+            .field("label", &self.label)
+            .field("ctrl", &self.ctrl.is_some())
+            .finish()
+    }
 }
 
 impl BBlock {
@@ -67,6 +80,7 @@ impl BBlock {
             instrs: Vec::new(),
             children: Vec::new(),
             ctrl: None,
+            label: None,
         }
     }
 }
@@ -197,7 +211,6 @@ fn _cfg_analysis(
     parents: &mut Vec<usize>,
     parents_stack: &mut Vec<usize>,
     idx: usize,
-    last_label_num: &mut i32,
 ) {
     let mut merge_option = blocks[idx].merge.take();
     if let Some(merge) = &mut merge_option {
@@ -212,10 +225,6 @@ fn _cfg_analysis(
                 remains,
                 parents_stack: saved_parents_stack,
             } => {
-                println!(
-                    "{}: Comparing {:?} and {:?}",
-                    idx, parents_stack, saved_parents_stack
-                );
                 let last_common_fork_idx = parents_stack
                     .iter()
                     .zip(saved_parents_stack.iter())
@@ -228,16 +237,13 @@ fn _cfg_analysis(
                 if *remains == 0 {
                     let last_common_fork = saved_parents_stack[last_common_fork_idx - 1];
                     blocks[last_common_fork].successor = Some(idx);
-                    *merge = Merge::Final {
-                        label_num: *last_label_num,
-                    };
-                    *last_label_num += 1
+                    *merge = Merge::Final;
                 }
 
                 blocks[idx].merge = merge_option;
                 return;
             }
-            Merge::Final { label_num: _ } => {
+            Merge::Final => {
                 panic!("Entering a merged node");
             }
         }
@@ -257,7 +263,7 @@ fn _cfg_analysis(
     let children_len = blocks[idx].children.len();
     for c_idx in 0..children_len {
         let c = blocks[idx].children[c_idx];
-        _cfg_analysis(blocks, visited, parents, parents_stack, c, last_label_num);
+        _cfg_analysis(blocks, visited, parents, parents_stack, c);
     }
 
     parents_stack.pop();
@@ -289,47 +295,42 @@ fn cfg_analysis(blocks: &mut Vec<BBlock>) {
     let mut visited = vec![false; blocks.len()];
     let mut parents: Vec<usize> = Vec::new();
     let mut parents_stack: Vec<usize> = Vec::new();
-    let mut last_label_num = 0;
 
-    _cfg_analysis(
-        blocks,
-        &mut visited,
-        &mut parents,
-        &mut parents_stack,
-        0,
-        &mut last_label_num,
-    );
+    _cfg_analysis(blocks, &mut visited, &mut parents, &mut parents_stack, 0);
 }
 
-fn _cfg_to_st(blocks: &mut Vec<BBlock>, visited: &mut Vec<bool>, idx: usize) -> SyntaxNode {
+fn _cfg_to_st(
+    blocks: &mut Vec<BBlock>,
+    visited: &mut Vec<bool>,
+    parent_succ: usize,
+    last_label: &mut i32,
+    idx: usize,
+) -> Option<SyntaxNode> {
     if visited[idx] {
-        let label = match blocks[idx]
-            .merge
-            .as_ref()
-            .expect("Entering a node which has no merge info second time")
-        {
-            Merge::Final { label_num } => label_num,
-            _ => panic!("Entering a merging node which did not finalized"),
-        };
-        return SyntaxNode::Goto(Goto { num: *label });
+        if parent_succ == idx {
+            return None;
+        }
+
+        if blocks[idx].label.is_none() {
+            blocks[idx].label = Some(*last_label);
+            *last_label += 1;
+        }
+
+        let label = blocks[idx].label.unwrap();
+        return Some(SyntaxNode::Goto(Goto { num: label }));
     }
 
     visited[idx] = true;
 
     let mut instrs: Vec<SyntaxNode> = Vec::new();
-    if let Some(merge) = &blocks[idx].merge {
-        match merge {
-            Merge::Final { label_num } => instrs.push(SyntaxNode::Label(Label { num: *label_num })),
-            _ => panic!("Entering a merging node which did not finalized"),
-        }
-    };
-
     instrs.extend(std::mem::take(&mut blocks[idx].instrs));
 
+    let mut cur_succ = parent_succ;
     let succ_option = blocks[idx].successor;
-    let mut succ_node: Option<SyntaxNode> = None;
+    let mut succ_node_option = None;
     if let Some(succ) = succ_option {
-        succ_node = Some(_cfg_to_st(blocks, visited, succ));
+        succ_node_option = _cfg_to_st(blocks, visited, parent_succ, last_label, succ);
+        cur_succ = succ;
         visited[succ] = true;
     }
 
@@ -337,42 +338,68 @@ fn _cfg_to_st(blocks: &mut Vec<BBlock>, visited: &mut Vec<bool>, idx: usize) -> 
     if let Some(ctrl) = ctrl_option {
         let children_len = blocks[idx].children.len();
         for i in 0..children_len {
-            let subnode = _cfg_to_st(blocks, visited, blocks[idx].children[i]);
-            ctrl.add_child(subnode);
+            let subnode_option = _cfg_to_st(
+                blocks,
+                visited,
+                cur_succ,
+                last_label,
+                blocks[idx].children[i],
+            );
+            if let Some(subnode) = subnode_option {
+                ctrl.add_child(subnode);
+            }
             ctrl.next_branch();
         }
         instrs.push(ctrl.node());
     } else {
         let children_len = blocks[idx].children.len();
         if children_len > 1 {
-            panic!("Entering a node with no control instruction but with multiple children")
+            panic!(
+                "Entering a node with no control instruction but with multiple children.\n{}\n{:?}",
+                idx, blocks
+            )
         }
         if children_len != 0 {
-            let node = _cfg_to_st(blocks, visited, blocks[idx].children[0]);
-            instrs.push(node);
+            let node_option = _cfg_to_st(
+                blocks,
+                visited,
+                cur_succ,
+                last_label,
+                blocks[idx].children[0],
+            );
+            if let Some(node) = node_option {
+                instrs.push(node);
+            }
         }
     }
-
-    if let Some(node) = succ_node {
-        instrs.push(node);
+    if let Some(succ_node) = succ_node_option {
+        if let Some(label) = blocks[succ_option.unwrap()].label {
+            instrs.push(SyntaxNode::Label(Label { num: label }));
+        }
+        instrs.push(succ_node);
     }
 
-    SyntaxNode::InstrSeq(InstrSeq { instrs })
+    Some(SyntaxNode::InstrSeq(InstrSeq { instrs }))
 }
 
-fn cfg_to_st(blocks: &mut Vec<BBlock>) -> SyntaxNode {
+fn cfg_to_st(blocks: &mut Vec<BBlock>) -> Option<SyntaxNode> {
     if blocks.len() == 0 {
-        return SyntaxNode::InstrSeq(InstrSeq { instrs: Vec::new() });
+        return None;
     }
 
     let mut visited = vec![false; blocks.len()];
-    _cfg_to_st(blocks, &mut visited, 0)
+    let mut last_label = 0;
+    _cfg_to_st(blocks, &mut visited, 0, &mut last_label, 0)
 }
 
 pub fn cfg(instrs: Vec<SyntaxNode>) -> SyntaxNode {
     let mut blocks = cfg_build(instrs);
     cfg_analysis(&mut blocks);
-    cfg_to_st(&mut blocks)
+    println!("{:?}", blocks);
+    match cfg_to_st(&mut blocks) {
+        Some(st) => st,
+        None => SyntaxNode::InstrSeq(InstrSeq { instrs: Vec::new() }),
+    }
 }
 
 impl PreControlNode for Label {

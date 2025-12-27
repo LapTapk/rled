@@ -407,7 +407,6 @@ pub struct If {
 impl SyntaxTree for If {
     fn dump(&self) -> String {
         let t = String::from("    ") + self.t.dump().as_str().replace("\n", "\n    ").as_str();
-        let f = String::from("    ") + self.f.dump().as_str().replace("\n", "\n    ").as_str();
         let comp = self.comp.dump();
         let args = self
             .args
@@ -415,7 +414,12 @@ impl SyntaxTree for If {
             .map(|x| x.dump())
             .collect::<Vec<_>>()
             .join(", ");
-        format!("if {}({}) {{\n{}\n}} else {{\n{}\n}}", comp, args, t, f)
+        if self.f.instrs.is_empty() {
+            format!("if {}({}) {{\n{}\n}}", comp, args, t)
+        } else {
+            let f = String::from("    ") + self.f.dump().as_str().replace("\n", "\n    ").as_str();
+            format!("if {}({}) {{\n{}\n}} else {{\n{}\n}}", comp, args, t, f)
+        }
     }
 }
 
