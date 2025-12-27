@@ -1,33 +1,18 @@
 use crate::core::parse::errors::LexemeError;
-use crate::core::parse::grammar::*;
+use crate::core::parse::grammar::{expect_integer, expect_list, expect_string, expect_tuple};
+use crate::core::parse::tree::{ParseLexeme, ParseTree};
 use crate::core::parse::util::atomutf8_to_string;
 use crate::core::syntax::*;
 use erlang::OtpErlangTerm;
 
-pub fn parse_and_dump(term: &OtpErlangTerm) -> String {
-    Module::parse(term).dump()
-}
-
-trait ParseLexeme {
-    const LEXEME: &'static str;
-}
-
-pub trait ParseTree {
-    fn parse(term: &OtpErlangTerm) -> SyntaxNode;
-}
-
 type ParseFn = fn(&OtpErlangTerm) -> SyntaxNode;
 
-impl ParseTree for Unparsed {
-    fn parse(term: &OtpErlangTerm) -> SyntaxNode {
-        SyntaxNode::Unparsed(Unparsed {
-            term: term.clone(),
-            reason: "SyntaxNode unregistered".into(),
-        })
-    }
+pub(crate) fn parse_node(term: &OtpErlangTerm) -> SyntaxNode {
+    let lexeme = try_parse!(term, get_lexeme(term));
+    parse_dispatch(lexeme.as_str())(term)
 }
 
-pub fn get_lexeme(term: &OtpErlangTerm) -> Result<String, LexemeError> {
+fn get_lexeme(term: &OtpErlangTerm) -> Result<String, LexemeError> {
     let atom = match term {
         OtpErlangTerm::OtpErlangTuple(tuple) => {
             if tuple.is_empty() {
@@ -76,15 +61,9 @@ macro_rules! construct_helpers {
                 _ => Unparsed::parse,
             }
         }
-
-        impl ParseTree for SyntaxNode {
-            fn parse(term: &OtpErlangTerm) -> SyntaxNode {
-                let lexeme = try_parse!(term, get_lexeme(term));
-                parse_dispatch(lexeme.as_str())(term)
-            }
-        }
     };
 }
+
 construct_helpers!(
     Module,
     Func,
@@ -127,6 +106,15 @@ macro_rules! empty_node {
             }
         }
     };
+}
+
+impl ParseTree for Unparsed {
+    fn parse(term: &OtpErlangTerm) -> SyntaxNode {
+        SyntaxNode::Unparsed(Unparsed {
+            term: term.clone(),
+            reason: "SyntaxNode unregistered".into(),
+        })
+    }
 }
 
 impl ParseLexeme for Module {

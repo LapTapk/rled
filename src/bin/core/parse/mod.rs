@@ -1,6 +1,9 @@
+mod dispatcher;
 pub mod errors;
 mod grammar;
-mod parse;
+mod nodes;
+mod tree;
 mod util;
 
-pub use crate::core::parse::parse::{ParseTree, parse_and_dump};
+pub use dispatcher::parse_and_dump;
+pub use tree::ParseTree;
