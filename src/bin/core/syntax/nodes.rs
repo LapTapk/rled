@@ -22,50 +22,58 @@ macro_rules! node_as_lexeme {
     };
 }
 
-macro_rules! construct_syntax_node {
-    ( $( $node:ident ),*  $(,)? ) => {
-        #[derive(Clone, Debug)]
-        pub enum SyntaxNode {
-        $(
-            $node($node),
-        )*
-        }
-    }
+macro_rules! syntax_node_variants {
+    ($macro:ident) => {
+        $macro!(Unparsed);
+        $macro!(Module);
+        $macro!(Func);
+        $macro!(Move);
+        $macro!(CallExt);
+        $macro!(GcBif);
+        $macro!(PutList);
+        $macro!(Tr);
+        $macro!(Test);
+        $macro!(CallExtLast);
+        $macro!(CallExtOnly);
+        $macro!(Label);
+        $macro!(XReg);
+        $macro!(YReg);
+        $macro!(ExtFunc);
+        $macro!(FLabel);
+        $macro!(Literal);
+        $macro!(Integer);
+        $macro!(Nil);
+        $macro!(Atom);
+        $macro!(TInteger);
+        $macro!(Line);
+        $macro!(FuncInfo);
+        $macro!(Allocate);
+        $macro!(TestHeap);
+        $macro!(InitYRegs);
+        $macro!(IsGe);
+        $macro!(IsEqExact);
+        $macro!(If);
+        $macro!(InstrSeq);
+        $macro!(Goto);
+    };
 }
 
-construct_syntax_node!(
-    Unparsed,
-    Module,
-    Func,
-    Move,
-    CallExt,
-    GcBif,
-    PutList,
-    Tr,
-    Test,
-    CallExtLast,
-    CallExtOnly,
-    Label,
-    XReg,
-    YReg,
-    ExtFunc,
-    FLabel,
-    Literal,
-    Integer,
-    Nil,
-    Atom,
-    TInteger,
-    Line,
-    FuncInfo,
-    Allocate,
-    TestHeap,
-    InitYRegs,
-    IsGe,
-    IsEqExact,
-    If,
-    InstrSeq,
-    Goto
-);
+macro_rules! syntax_node_variant {
+    ($node:ident) => {
+        $node($node),
+    };
+}
+
+macro_rules! construct_syntax_node {
+    () => {
+        #[derive(Clone, Debug)]
+        pub enum SyntaxNode {
+            syntax_node_variants!(syntax_node_variant)
+        }
+    };
+}
+
+construct_syntax_node!();
 
 #[derive(Clone, Debug)]
 pub struct Unparsed {

@@ -1,40 +1,17 @@
+use super::nodes::syntax_node_variants;
 use super::nodes::*;
 use super::tree::SyntaxTree;
+
+macro_rules! syntax_node_dump_arm {
+    ($node:ident) => {
+        SyntaxNode::$node(n) => n.dump(),
+    };
+}
 
 impl SyntaxTree for SyntaxNode {
     fn dump(&self) -> String {
         match self {
-            SyntaxNode::Unparsed(n) => n.dump(),
-            SyntaxNode::Module(n) => n.dump(),
-            SyntaxNode::Func(n) => n.dump(),
-            SyntaxNode::Move(n) => n.dump(),
-            SyntaxNode::CallExt(n) => n.dump(),
-            SyntaxNode::GcBif(n) => n.dump(),
-            SyntaxNode::PutList(n) => n.dump(),
-            SyntaxNode::Tr(n) => n.dump(),
-            SyntaxNode::Test(n) => n.dump(),
-            SyntaxNode::CallExtLast(n) => n.dump(),
-            SyntaxNode::CallExtOnly(n) => n.dump(),
-            SyntaxNode::Label(n) => n.dump(),
-            SyntaxNode::XReg(n) => n.dump(),
-            SyntaxNode::YReg(n) => n.dump(),
-            SyntaxNode::ExtFunc(n) => n.dump(),
-            SyntaxNode::FLabel(n) => n.dump(),
-            SyntaxNode::Literal(n) => n.dump(),
-            SyntaxNode::Integer(n) => n.dump(),
-            SyntaxNode::Nil(n) => n.dump(),
-            SyntaxNode::Atom(n) => n.dump(),
-            SyntaxNode::TInteger(n) => n.dump(),
-            SyntaxNode::Line(n) => n.dump(),
-            SyntaxNode::FuncInfo(n) => n.dump(),
-            SyntaxNode::Allocate(n) => n.dump(),
-            SyntaxNode::TestHeap(n) => n.dump(),
-            SyntaxNode::InitYRegs(n) => n.dump(),
-            SyntaxNode::IsGe(n) => n.dump(),
-            SyntaxNode::IsEqExact(n) => n.dump(),
-            SyntaxNode::If(n) => n.dump(),
-            SyntaxNode::InstrSeq(n) => n.dump(),
-            SyntaxNode::Goto(n) => n.dump(),
+            syntax_node_variants!(syntax_node_dump_arm)
         }
     }
 }
