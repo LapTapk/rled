@@ -2,7 +2,7 @@ mod core;
 
 use crate::core::control::cfg;
 use crate::core::parse::ParseTree;
-use crate::core::syntax::{SyntaxNode, SyntaxTree};
+use crate::core::syntax::{SyntaxNode, SyntaxDump};
 use erlang::binary_to_term;
 use std::env;
 use std::process::{Command, ExitCode, Stdio};

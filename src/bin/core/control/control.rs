@@ -1,5 +1,5 @@
 use crate::core::syntax::*;
-use std::collections::{HashMap, VecDeque};
+use std::collections::HashMap;
 use std::fmt;
 
 enum Branch {
