@@ -395,7 +395,6 @@ fn cfg_to_st(blocks: &mut Vec<BBlock>) -> Option<SyntaxNode> {
 pub fn cfg(instrs: Vec<SyntaxNode>) -> SyntaxNode {
     let mut blocks = cfg_build(instrs);
     cfg_analysis(&mut blocks);
-    println!("{:?}", blocks);
     match cfg_to_st(&mut blocks) {
         Some(st) => st,
         None => SyntaxNode::InstrSeq(InstrSeq { instrs: Vec::new() }),
