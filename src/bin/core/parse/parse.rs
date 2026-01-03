@@ -48,7 +48,6 @@ impl ParseNode for SyntaxNode {
     }
 }
 
-
 impl ParseNode for Module {
     fn parse(term: &OtpErlangTerm) -> SyntaxNode {
         let module = try_parse!(term, expect_tuple(term, 6));
