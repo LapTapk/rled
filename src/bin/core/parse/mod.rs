@@ -1,6 +1,7 @@
 pub mod errors;
 mod grammar;
+mod lexeme;
 mod parse;
 mod util;
 
-pub use crate::core::parse::parse::{ParseTree, parse_and_dump};
+pub use crate::core::parse::parse::ParseNode;

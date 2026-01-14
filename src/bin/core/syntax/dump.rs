@@ -1,14 +1,12 @@
-use erlang::OtpErlangTerm;
+use crate::core::syntax::nodes::*;
 
-pub trait SyntaxTree {
+pub trait SyntaxDump {
     fn dump(&self) -> String;
 }
 
 macro_rules! info_node {
     {$type:ident, $s:literal} => {
-        #[derive(Clone, Debug)]
-        pub struct $type;
-        impl SyntaxTree for $type {
+        impl SyntaxDump for $type {
             fn dump(&self) -> String {
                 format!("# {}", $s)
             }
@@ -18,9 +16,7 @@ macro_rules! info_node {
 
 macro_rules! node_as_lexeme {
     {$type:ident, $s:literal} => {
-        #[derive(Clone, Debug)]
-        pub struct $type;
-        impl SyntaxTree for $type {
+        impl SyntaxDump for $type {
             fn dump(&self) -> String {
                 $s.into()
             }
@@ -28,77 +24,7 @@ macro_rules! node_as_lexeme {
     };
 }
 
-macro_rules! construct_syntax_node {
-    ( $( $node:ident ),*  $(,)? ) => {
-        #[derive(Clone, Debug)]
-        pub enum SyntaxNode {
-        $(
-            $node($node),
-        )*
-        }
-
-        impl SyntaxTree for SyntaxNode {
-            fn dump(&self) -> String {
-                match self {
-                $(
-                    SyntaxNode::$node(n) => n.dump(),
-                )*
-                }
-            }
-        }
-    }
-}
-
-construct_syntax_node!(
-    Unparsed,
-    Module,
-    Func,
-    Move,
-    CallExt,
-    GcBif,
-    PutList,
-    Tr,
-    Test,
-    CallExtLast,
-    CallExtOnly,
-    Label,
-    XReg,
-    YReg,
-    ExtFunc,
-    FLabel,
-    Literal,
-    Integer,
-    Nil,
-    Atom,
-    TInteger,
-    Line,
-    FuncInfo,
-    Allocate,
-    TestHeap,
-    InitYRegs,
-    IsGe,
-    IsEqExact,
-    If,
-    InstrSeq,
-    Goto
-);
-
-#[derive(Clone, Debug)]
-pub struct Unparsed {
-    pub term: OtpErlangTerm,
-    pub reason: String,
-}
-
-impl Unparsed {
-    pub fn new(term: &OtpErlangTerm, reason: &str) -> SyntaxNode {
-        SyntaxNode::Unparsed(Unparsed {
-            term: term.clone(),
-            reason: reason.into(),
-        })
-    }
-}
-
-impl SyntaxTree for Unparsed {
+impl SyntaxDump for Unparsed {
     fn dump(&self) -> String {
         let tr = format!(
             "{:?}\n^^^^^^^^^^^^^^^^^^^^^^^^^\n{}\n\n",
@@ -108,13 +34,7 @@ impl SyntaxTree for Unparsed {
     }
 }
 
-#[derive(Clone, Debug)]
-pub struct Module {
-    pub name: String,
-    pub funcs: Vec<SyntaxNode>,
-}
-
-impl SyntaxTree for Module {
+impl SyntaxDump for Module {
     fn dump(&self) -> String {
         let mut tr = vec![format!("-module({}).\n", self.name)];
         for func in &self.funcs {
@@ -126,15 +46,7 @@ impl SyntaxTree for Module {
     }
 }
 
-#[derive(Clone, Debug)]
-pub struct Func {
-    pub name: String,
-    pub arity: i32,
-    pub label: i32,
-    pub instrs: Vec<SyntaxNode>,
-}
-
-impl SyntaxTree for Func {
+impl SyntaxDump for Func {
     fn dump(&self) -> String {
         let args = (0..self.arity)
             .map(|x| format!("X{}", x))
@@ -151,46 +63,25 @@ impl SyntaxTree for Func {
     }
 }
 
-#[derive(Clone, Debug)]
-pub struct Label {
-    pub num: i32,
-}
-
-impl SyntaxTree for Label {
+impl SyntaxDump for Label {
     fn dump(&self) -> String {
         format!("\nlabel{}:", self.num)
     }
 }
 
-#[derive(Clone, Debug)]
-pub struct XReg {
-    pub num: i32,
-}
-
-impl SyntaxTree for XReg {
+impl SyntaxDump for XReg {
     fn dump(&self) -> String {
         format!("X{}", self.num)
     }
 }
 
-#[derive(Clone, Debug)]
-pub struct YReg {
-    pub num: i32,
-}
-
-impl SyntaxTree for YReg {
+impl SyntaxDump for YReg {
     fn dump(&self) -> String {
         format!("Y{}", self.num)
     }
 }
 
-#[derive(Clone, Debug)]
-pub struct Move {
-    pub lvalue: Box<SyntaxNode>,
-    pub rvalue: Box<SyntaxNode>,
-}
-
-impl SyntaxTree for Move {
+impl SyntaxDump for Move {
     fn dump(&self) -> String {
         let tr1 = self.lvalue.dump();
         let tr2 = self.rvalue.dump();
@@ -198,26 +89,13 @@ impl SyntaxTree for Move {
     }
 }
 
-#[derive(Clone, Debug)]
-pub struct CallExt {
-    pub arity: i32,
-    pub func: Box<SyntaxNode>,
-}
-
-impl SyntaxTree for CallExt {
+impl SyntaxDump for CallExt {
     fn dump(&self) -> String {
         format!("X0 = {}", self.func.dump())
     }
 }
 
-#[derive(Clone, Debug)]
-pub struct ExtFunc {
-    pub module: String,
-    pub name: String,
-    pub arity: i32,
-}
-
-impl SyntaxTree for ExtFunc {
+impl SyntaxDump for ExtFunc {
     fn dump(&self) -> String {
         let args = (0..self.arity)
             .map(|x| format!("X{}", x))
@@ -228,27 +106,13 @@ impl SyntaxTree for ExtFunc {
     }
 }
 
-#[derive(Clone, Debug)]
-pub struct FLabel {
-    pub num: i32,
-}
-
-impl SyntaxTree for FLabel {
+impl SyntaxDump for FLabel {
     fn dump(&self) -> String {
         format!("label{}", self.num)
     }
 }
 
-#[derive(Clone, Debug)]
-pub struct GcBif {
-    pub name: String,
-    pub fallback: Box<SyntaxNode>,
-    pub arity: i32,
-    pub args: Vec<SyntaxNode>,
-    pub store: Box<SyntaxNode>,
-}
-
-impl SyntaxTree for GcBif {
+impl SyntaxDump for GcBif {
     fn dump(&self) -> String {
         let args = self
             .args
@@ -262,60 +126,31 @@ impl SyntaxTree for GcBif {
     }
 }
 
-#[derive(Clone, Debug)]
-pub struct Literal {
-    pub s: String,
-}
-
-impl SyntaxTree for Literal {
+impl SyntaxDump for Literal {
     fn dump(&self) -> String {
         format!("{:?}", self.s)
     }
 }
 
-#[derive(Clone, Debug)]
-pub struct CallExtLast {
-    pub arity: i32,
-    pub func: Box<SyntaxNode>,
-}
-
-impl SyntaxTree for CallExtLast {
+impl SyntaxDump for CallExtLast {
     fn dump(&self) -> String {
         format!("return {}", self.func.dump())
     }
 }
 
-#[derive(Clone, Debug)]
-pub struct CallExtOnly {
-    pub arity: i32,
-    pub func: Box<SyntaxNode>,
-}
-
-impl SyntaxTree for CallExtOnly {
+impl SyntaxDump for CallExtOnly {
     fn dump(&self) -> String {
         format!("return {}", self.func.dump())
     }
 }
 
-#[derive(Clone, Debug)]
-pub struct Integer {
-    pub num: i32,
-}
-
-impl SyntaxTree for Integer {
+impl SyntaxDump for Integer {
     fn dump(&self) -> String {
         format!("{}", self.num)
     }
 }
 
-#[derive(Clone, Debug)]
-pub struct PutList {
-    pub head: Box<SyntaxNode>,
-    pub tail: Box<SyntaxNode>,
-    pub store: Box<SyntaxNode>,
-}
-
-impl SyntaxTree for PutList {
+impl SyntaxDump for PutList {
     fn dump(&self) -> String {
         let head_tr = self.head.dump();
         let store_tr = self.store.dump();
@@ -328,50 +163,26 @@ impl SyntaxTree for PutList {
     }
 }
 
-#[derive(Clone, Debug)]
-pub struct Atom {
-    pub name: String,
-}
-
-impl SyntaxTree for Atom {
+impl SyntaxDump for Atom {
     fn dump(&self) -> String {
         self.name.clone()
     }
 }
 
-#[derive(Clone, Debug)]
-pub struct TInteger {
-    pub num1: i32,
-    pub num2: i32,
-}
-
-impl SyntaxTree for TInteger {
+impl SyntaxDump for TInteger {
     fn dump(&self) -> String {
         format!("{} - {}", self.num1, self.num2)
     }
 }
 
-#[derive(Clone, Debug)]
-pub struct Tr {
-    pub reg: Box<SyntaxNode>,
-    pub ty: Box<SyntaxNode>,
-}
-
-impl SyntaxTree for Tr {
+impl SyntaxDump for Tr {
     fn dump(&self) -> String {
         let reg_tr = self.reg.dump();
         format!("{}", reg_tr)
     }
 }
 
-#[derive(Clone, Debug)]
-pub struct Test {
-    pub comp: Box<SyntaxNode>,
-    pub fail: Box<SyntaxNode>,
-    pub args: Vec<SyntaxNode>,
-}
-
-impl SyntaxTree for Test {
+impl SyntaxDump for Test {
     fn dump(&self) -> String {
         let tr_comp = self.comp.dump();
         let tr_fail = self.fail.dump();
@@ -385,26 +196,13 @@ impl SyntaxTree for Test {
     }
 }
 
-#[derive(Clone, Debug)]
-pub struct Line {
-    pub num: i32,
-}
-
-impl SyntaxTree for Line {
+impl SyntaxDump for Line {
     fn dump(&self) -> String {
         format!("# line {}", self.num)
     }
 }
 
-#[derive(Clone, Debug)]
-pub struct If {
-    pub t: InstrSeq,
-    pub f: InstrSeq,
-    pub comp: Box<SyntaxNode>,
-    pub args: Vec<SyntaxNode>,
-}
-
-impl SyntaxTree for If {
+impl SyntaxDump for If {
     fn dump(&self) -> String {
         let t = String::from("    ") + self.t.dump().as_str().replace("\n", "\n    ").as_str();
         let comp = self.comp.dump();
@@ -423,12 +221,7 @@ impl SyntaxTree for If {
     }
 }
 
-#[derive(Clone, Debug)]
-pub struct InstrSeq {
-    pub instrs: Vec<SyntaxNode>,
-}
-
-impl SyntaxTree for InstrSeq {
+impl SyntaxDump for InstrSeq {
     fn dump(&self) -> String {
         let mut result: Vec<String> = Vec::with_capacity(self.instrs.len());
         for instr in &self.instrs {
@@ -438,12 +231,7 @@ impl SyntaxTree for InstrSeq {
     }
 }
 
-#[derive(Clone, Debug)]
-pub struct Goto {
-    pub num: i32,
-}
-
-impl SyntaxTree for Goto {
+impl SyntaxDump for Goto {
     fn dump(&self) -> String {
         format!("goto {}", self.num)
     }

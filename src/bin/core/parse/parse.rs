@@ -1,52 +1,20 @@
-use crate::core::parse::errors::LexemeError;
 use crate::core::parse::grammar::*;
+use crate::core::parse::lexeme::{get_lexeme, parse_dispatch};
 use crate::core::parse::util::atomutf8_to_string;
 use crate::core::syntax::*;
 use erlang::OtpErlangTerm;
 
-pub fn parse_and_dump(term: &OtpErlangTerm) -> String {
-    Module::parse(term).dump()
-}
-
-trait ParseLexeme {
-    const LEXEME: &'static str;
-}
-
-pub trait ParseTree {
+pub trait ParseNode {
     fn parse(term: &OtpErlangTerm) -> SyntaxNode;
 }
 
-type ParseFn = fn(&OtpErlangTerm) -> SyntaxNode;
-
-impl ParseTree for Unparsed {
+impl ParseNode for Unparsed {
     fn parse(term: &OtpErlangTerm) -> SyntaxNode {
         SyntaxNode::Unparsed(Unparsed {
             term: term.clone(),
             reason: "SyntaxNode unregistered".into(),
         })
     }
-}
-
-pub fn get_lexeme(term: &OtpErlangTerm) -> Result<String, LexemeError> {
-    let atom = match term {
-        OtpErlangTerm::OtpErlangTuple(tuple) => {
-            if tuple.is_empty() {
-                return Err(LexemeError::EmptyTuple);
-            }
-
-            &tuple[0]
-        }
-        OtpErlangTerm::OtpErlangAtomUTF8(_) => term,
-        _ => {
-            return Err(LexemeError::ExpectedAtomOrTuple {
-                found: term.clone(),
-            });
-        }
-    };
-
-    atomutf8_to_string(atom).map_err(|_| LexemeError::Unsupported {
-        found: term.clone(),
-    })
 }
 
 macro_rules! try_parse {
@@ -63,65 +31,9 @@ macro_rules! try_parse {
     };
 }
 
-macro_rules! construct_helpers {
-    (
-        $( $node:ident ),* $(,)?
-    ) => {
-
-        fn parse_dispatch(lexeme: &str) -> ParseFn {
-            match lexeme {
-            $(
-                <$node as ParseLexeme>::LEXEME => <$node as ParseTree>::parse,
-            )*
-                _ => Unparsed::parse,
-            }
-        }
-
-        impl ParseTree for SyntaxNode {
-            fn parse(term: &OtpErlangTerm) -> SyntaxNode {
-                let lexeme = try_parse!(term, get_lexeme(term));
-                parse_dispatch(lexeme.as_str())(term)
-            }
-        }
-    };
-}
-construct_helpers!(
-    Module,
-    Func,
-    Move,
-    CallExt,
-    GcBif,
-    PutList,
-    Tr,
-    Test,
-    CallExtLast,
-    CallExtOnly,
-    Label,
-    XReg,
-    YReg,
-    ExtFunc,
-    FLabel,
-    Literal,
-    Integer,
-    Nil,
-    Atom,
-    TInteger,
-    Line,
-    FuncInfo,
-    Allocate,
-    TestHeap,
-    InitYRegs,
-    IsGe,
-    IsEqExact
-);
-
 macro_rules! empty_node {
-    {$type:ident, $lexeme:literal} => {
-        impl ParseLexeme for $type {
-            const LEXEME: &'static str = $lexeme;
-        }
-
-        impl ParseTree for $type {
+    {$type:ident} => {
+        impl ParseNode for $type {
             fn parse(_: &OtpErlangTerm) -> SyntaxNode {
                 SyntaxNode::$type($type{})
             }
@@ -129,11 +41,14 @@ macro_rules! empty_node {
     };
 }
 
-impl ParseLexeme for Module {
-    const LEXEME: &'static str = "beam_file";
+impl ParseNode for SyntaxNode {
+    fn parse(term: &OtpErlangTerm) -> SyntaxNode {
+        let lexeme = try_parse!(term, get_lexeme(term));
+        parse_dispatch(lexeme.as_str())(term)
+    }
 }
 
-impl ParseTree for Module {
+impl ParseNode for Module {
     fn parse(term: &OtpErlangTerm) -> SyntaxNode {
         let module = try_parse!(term, expect_tuple(term, 6));
         let name = try_parse!(term, atomutf8_to_string(&module[1]));
@@ -150,11 +65,7 @@ impl ParseTree for Module {
     }
 }
 
-impl ParseLexeme for Func {
-    const LEXEME: &'static str = "function";
-}
-
-impl ParseTree for Func {
+impl ParseNode for Func {
     fn parse(term: &OtpErlangTerm) -> SyntaxNode {
         let func_tuple = try_parse!(term, expect_tuple(term, 5));
         let name = try_parse!(term, atomutf8_to_string(&func_tuple[1]));
@@ -178,11 +89,7 @@ impl ParseTree for Func {
     }
 }
 
-impl ParseLexeme for Label {
-    const LEXEME: &'static str = "label";
-}
-
-impl ParseTree for Label {
+impl ParseNode for Label {
     fn parse(term: &OtpErlangTerm) -> SyntaxNode {
         let label_tuple = try_parse!(term, expect_tuple(term, 2));
 
@@ -195,11 +102,7 @@ impl ParseTree for Label {
     }
 }
 
-impl ParseLexeme for XReg {
-    const LEXEME: &'static str = "x";
-}
-
-impl ParseTree for XReg {
+impl ParseNode for XReg {
     fn parse(term: &OtpErlangTerm) -> SyntaxNode {
         let xreg_tuple = try_parse!(term, expect_tuple(term, 2));
         let num = try_parse!(term, expect_integer(&xreg_tuple[1]));
@@ -209,11 +112,7 @@ impl ParseTree for XReg {
     }
 }
 
-impl ParseLexeme for YReg {
-    const LEXEME: &'static str = "y";
-}
-
-impl ParseTree for YReg {
+impl ParseNode for YReg {
     fn parse(term: &OtpErlangTerm) -> SyntaxNode {
         let yreg_tuple = try_parse!(term, expect_tuple(term, 2));
         let num = try_parse!(term, expect_integer(&yreg_tuple[1]));
@@ -223,11 +122,7 @@ impl ParseTree for YReg {
     }
 }
 
-impl ParseLexeme for Move {
-    const LEXEME: &'static str = "move";
-}
-
-impl ParseTree for Move {
+impl ParseNode for Move {
     fn parse(term: &OtpErlangTerm) -> SyntaxNode {
         let move_tuple = try_parse!(term, expect_tuple(term, 3));
 
@@ -239,11 +134,7 @@ impl ParseTree for Move {
     }
 }
 
-impl ParseLexeme for CallExt {
-    const LEXEME: &'static str = "call_ext";
-}
-
-impl ParseTree for CallExt {
+impl ParseNode for CallExt {
     fn parse(term: &OtpErlangTerm) -> SyntaxNode {
         let callext_tuple = try_parse!(term, expect_tuple(term, 3));
         let arity = try_parse!(term, expect_integer(&callext_tuple[1]));
@@ -255,11 +146,7 @@ impl ParseTree for CallExt {
     }
 }
 
-impl ParseLexeme for ExtFunc {
-    const LEXEME: &'static str = "extfunc";
-}
-
-impl ParseTree for ExtFunc {
+impl ParseNode for ExtFunc {
     fn parse(term: &OtpErlangTerm) -> SyntaxNode {
         let extfunc_tuple = try_parse!(term, expect_tuple(term, 4));
 
@@ -278,11 +165,7 @@ impl ParseTree for ExtFunc {
     }
 }
 
-impl ParseLexeme for FLabel {
-    const LEXEME: &'static str = "f";
-}
-
-impl ParseTree for FLabel {
+impl ParseNode for FLabel {
     fn parse(term: &OtpErlangTerm) -> SyntaxNode {
         let flabel_tuple = try_parse!(term, expect_tuple(term, 2));
         let num = try_parse!(term, expect_integer(&flabel_tuple[1]));
@@ -292,11 +175,7 @@ impl ParseTree for FLabel {
     }
 }
 
-impl ParseLexeme for GcBif {
-    const LEXEME: &'static str = "gc_bif";
-}
-
-impl ParseTree for GcBif {
+impl ParseNode for GcBif {
     fn parse(term: &OtpErlangTerm) -> SyntaxNode {
         let gcbif_tuple = try_parse!(term, expect_tuple(term, 6));
         let name = try_parse!(term, atomutf8_to_string(&gcbif_tuple[1]));
@@ -327,11 +206,7 @@ impl ParseTree for GcBif {
     }
 }
 
-impl ParseLexeme for Literal {
-    const LEXEME: &'static str = "literal";
-}
-
-impl ParseTree for Literal {
+impl ParseNode for Literal {
     fn parse(term: &OtpErlangTerm) -> SyntaxNode {
         let literal_tuple = try_parse!(term, expect_tuple(term, 2));
         let s = try_parse!(term, expect_string(&literal_tuple[1]));
@@ -341,11 +216,7 @@ impl ParseTree for Literal {
     }
 }
 
-impl ParseLexeme for CallExtLast {
-    const LEXEME: &'static str = "call_ext_last";
-}
-
-impl ParseTree for CallExtLast {
+impl ParseNode for CallExtLast {
     fn parse(term: &OtpErlangTerm) -> SyntaxNode {
         let callext_tuple = try_parse!(term, expect_tuple(term, 4));
         let arity = try_parse!(term, expect_integer(&callext_tuple[1]));
@@ -357,11 +228,7 @@ impl ParseTree for CallExtLast {
     }
 }
 
-impl ParseLexeme for CallExtOnly {
-    const LEXEME: &'static str = "call_ext_only";
-}
-
-impl ParseTree for CallExtOnly {
+impl ParseNode for CallExtOnly {
     fn parse(term: &OtpErlangTerm) -> SyntaxNode {
         let callext_tuple = try_parse!(term, expect_tuple(term, 3));
 
@@ -374,11 +241,7 @@ impl ParseTree for CallExtOnly {
     }
 }
 
-impl ParseLexeme for Integer {
-    const LEXEME: &'static str = "integer";
-}
-
-impl ParseTree for Integer {
+impl ParseNode for Integer {
     fn parse(term: &OtpErlangTerm) -> SyntaxNode {
         let int_tuple = try_parse!(term, expect_tuple(term, 2));
         let num = try_parse!(term, expect_integer(&int_tuple[1]));
@@ -387,11 +250,7 @@ impl ParseTree for Integer {
     }
 }
 
-impl ParseLexeme for PutList {
-    const LEXEME: &'static str = "put_list";
-}
-
-impl ParseTree for PutList {
+impl ParseNode for PutList {
     fn parse(term: &OtpErlangTerm) -> SyntaxNode {
         let putlist_tuple = try_parse!(term, expect_tuple(term, 4));
         let head = Box::new(SyntaxNode::parse(&putlist_tuple[1]));
@@ -405,21 +264,13 @@ impl ParseTree for PutList {
     }
 }
 
-impl ParseLexeme for Nil {
-    const LEXEME: &'static str = "nil";
-}
-
-impl ParseTree for Nil {
+impl ParseNode for Nil {
     fn parse(_: &OtpErlangTerm) -> SyntaxNode {
         SyntaxNode::Nil(Nil {})
     }
 }
 
-impl ParseLexeme for Atom {
-    const LEXEME: &'static str = "atom";
-}
-
-impl ParseTree for Atom {
+impl ParseNode for Atom {
     fn parse(term: &OtpErlangTerm) -> SyntaxNode {
         let atom_tuple = try_parse!(term, expect_tuple(term, 2));
         let name = try_parse!(term, atomutf8_to_string(&atom_tuple[1]));
@@ -428,11 +279,7 @@ impl ParseTree for Atom {
     }
 }
 
-impl ParseLexeme for TInteger {
-    const LEXEME: &'static str = "t_integer";
-}
-
-impl ParseTree for TInteger {
+impl ParseNode for TInteger {
     fn parse(term: &OtpErlangTerm) -> SyntaxNode {
         let tint_tuple = try_parse!(term, expect_tuple(term, 2));
         let num_range = try_parse!(term, expect_tuple(&tint_tuple[1], 2));
@@ -443,11 +290,7 @@ impl ParseTree for TInteger {
     }
 }
 
-impl ParseLexeme for Tr {
-    const LEXEME: &'static str = "tr";
-}
-
-impl ParseTree for Tr {
+impl ParseNode for Tr {
     fn parse(term: &OtpErlangTerm) -> SyntaxNode {
         let tr_tuple = try_parse!(term, expect_tuple(term, 3));
 
@@ -459,11 +302,7 @@ impl ParseTree for Tr {
     }
 }
 
-impl ParseLexeme for Test {
-    const LEXEME: &'static str = "test";
-}
-
-impl ParseTree for Test {
+impl ParseNode for Test {
     fn parse(term: &OtpErlangTerm) -> SyntaxNode {
         let test_tuple = try_parse!(term, expect_tuple(term, 4));
 
@@ -482,11 +321,7 @@ impl ParseTree for Test {
     }
 }
 
-impl ParseLexeme for Line {
-    const LEXEME: &'static str = "line";
-}
-
-impl ParseTree for Line {
+impl ParseNode for Line {
     fn parse(term: &OtpErlangTerm) -> SyntaxNode {
         let tuple = try_parse!(term, expect_tuple(term, 2));
         let num = try_parse!(term, expect_integer(&tuple[1]));
@@ -496,9 +331,9 @@ impl ParseTree for Line {
     }
 }
 
-empty_node! {IsGe, "is_ge" }
-empty_node! {IsEqExact, "is_eq_exact"}
-empty_node! {FuncInfo, "func_info" }
-empty_node! {Allocate, "allocate"}
-empty_node! {InitYRegs, "init_yregs"}
-empty_node! {TestHeap, "test_heap"}
+empty_node! {IsGe}
+empty_node! {IsEqExact}
+empty_node! {FuncInfo}
+empty_node! {Allocate}
+empty_node! {InitYRegs}
+empty_node! {TestHeap}
